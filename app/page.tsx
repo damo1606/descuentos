@@ -23,33 +23,26 @@ function RankBadge({ value }: { value: number }) {
   )
 }
 
-function DiscountBadge({ value, label }: { value: number; label: string }) {
-  const color = value > 0 ? "text-green-400" : "text-red-400"
-  return (
-    <div className="text-center">
-      <div className={`text-sm font-bold ${color}`}>
-        {value > 0 ? "+" : ""}{value.toFixed(0)}%
-      </div>
-      <div className="text-xs text-gray-500">{label}</div>
-    </div>
-  )
-}
-
 export default function Home() {
   const [stocks, setStocks] = useState<StockSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [ran, setRan] = useState(false)
-  const [minDiscount, setMinDiscount] = useState(10)
-  const [minGfScore, setMinGfScore] = useState(60)
+  const [universe, setUniverse] = useState<"dia" | "sp500">("dia")
+  const [minDiscount, setMinDiscount] = useState(0)
+  const [minGfScore, setMinGfScore] = useState(0)
   const [limit, setLimit] = useState(50)
 
   async function runScreener() {
     setLoading(true)
     setRan(false)
     try {
-      const res = await fetch(
-        `/api/screener?limit=${limit}&minDiscount=${minDiscount}&minGfScore=${minGfScore}`
-      )
+      const params = new URLSearchParams({
+        universe,
+        minDiscount: String(minDiscount),
+        minGfScore: String(minGfScore),
+        ...(universe === "sp500" ? { limit: String(limit) } : {}),
+      })
+      const res = await fetch(`/api/screener?${params}`)
       const data = await res.json()
       setStocks(data.stocks ?? [])
     } finally {
@@ -57,6 +50,10 @@ export default function Home() {
       setRan(true)
     }
   }
+
+  const universeLabel = universe === "dia"
+    ? "Dow Jones 30 (DIA ETF)"
+    : "S&P 500"
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
@@ -66,12 +63,31 @@ export default function Home() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white">Descuentos</h1>
           <p className="text-gray-400 mt-1">
-            Acciones del S&P 500 con descuento sobre su valor intrínseco (GuruFocus)
+            Acciones con descuento sobre su valor intrínseco — GuruFocus
           </p>
         </div>
 
         {/* Filters */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 flex flex-wrap gap-6 items-end">
+
+          {/* Universe */}
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Universo</label>
+            <select
+              value={universe}
+              onChange={(e) => {
+                setUniverse(e.target.value as "dia" | "sp500")
+                setStocks([])
+                setRan(false)
+              }}
+              className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white"
+            >
+              <option value="dia">Dow Jones 30 (DIA)</option>
+              <option value="sp500">S&P 500</option>
+            </select>
+          </div>
+
+          {/* Discount */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">
               Descuento mínimo vs GF Value
@@ -89,6 +105,7 @@ export default function Home() {
             </div>
           </div>
 
+          {/* GF Score */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">GF Score mínimo</label>
             <div className="flex items-center gap-2">
@@ -104,21 +121,24 @@ export default function Home() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">
-              Acciones a consultar
-            </label>
-            <select
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-              className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white"
-            >
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={200}>200</option>
-            </select>
-          </div>
+          {/* Limit — solo para SP500 */}
+          {universe === "sp500" && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">
+                Acciones a consultar
+              </label>
+              <select
+                value={limit}
+                onChange={(e) => setLimit(Number(e.target.value))}
+                className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white"
+              >
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </div>
+          )}
 
           <button
             onClick={runScreener}
@@ -129,23 +149,25 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Results */}
+        {/* Loading */}
         {loading && (
           <div className="text-center py-20 text-gray-400">
-            Consultando GuruFocus para {limit} acciones...
+            Consultando GuruFocus — {universeLabel}...
           </div>
         )}
 
+        {/* Empty */}
         {ran && !loading && stocks.length === 0 && (
           <div className="text-center py-20 text-gray-400">
             No se encontraron acciones con los filtros aplicados.
           </div>
         )}
 
+        {/* Results */}
         {stocks.length > 0 && (
           <>
             <div className="text-sm text-gray-400 mb-3">
-              {stocks.length} acciones encontradas — ordenadas por descuento vs GF Value
+              {stocks.length} acciones — {universeLabel} — ordenadas por descuento vs GF Value
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -187,8 +209,8 @@ export default function Home() {
                       <td className="py-3 pr-4 text-right font-mono text-gray-300">
                         {s.currency}{s.gf_value.toFixed(2)}
                       </td>
-                      <td className="py-3 pr-4 text-right font-bold text-green-400">
-                        +{s.margin_gf_value.toFixed(1)}%
+                      <td className={`py-3 pr-4 text-right font-bold ${s.margin_gf_value >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        {s.margin_gf_value >= 0 ? "+" : ""}{s.margin_gf_value.toFixed(1)}%
                       </td>
                       <td className="py-3 pr-4">
                         <span className={`text-xs ${VALUATION_COLOR[s.gf_valuation] ?? "text-gray-400"}`}>

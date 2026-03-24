@@ -1,3 +1,10 @@
+// Dow Jones Industrial Average — 30 components (DIA ETF universe)
+export const DJIA_SYMBOLS = [
+  "AAPL","AMGN","AMZN","AXP","BA","CAT","CRM","CSCO","CVX","DIS",
+  "DOW","GS","HD","HON","IBM","JNJ","JPM","KO","MCD","MRK",
+  "MSFT","NKE","NVDA","PG","SHW","TRV","UNH","V","VZ","WMT",
+]
+
 // S&P 500 symbols — used as the universe for the screener
 export const SP500_SYMBOLS = [
   "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","BRK.B","LLY","AVGO",
