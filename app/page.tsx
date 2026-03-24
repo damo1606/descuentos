@@ -1,7 +1,64 @@
 "use client"
 
 import { useState } from "react"
-import type { StockResult } from "@/app/api/screener/route"
+import { DJIA_SYMBOLS, SP500_SYMBOLS } from "@/lib/symbols"
+
+const API_KEY = process.env.NEXT_PUBLIC_GURUFOCUS_API_KEY
+const BASE = "https://api.gurufocus.com/public/user"
+
+type StockResult = {
+  symbol: string
+  company: string
+  sector: string
+  currentPrice: number
+  high52w: number
+  dropFrom52w: number
+  gfScore: number
+  rankFinancialStrength: number
+  rankProfitability: number
+  rankGrowth: number
+  roic: number
+  debtToEquity: number
+  peRatio: number
+  gfValue: number
+  gfValuation: string
+  marginGfValue: number
+}
+
+async function fetchStock(symbol: string): Promise<StockResult | null> {
+  try {
+    const res = await fetch(`${BASE}/${API_KEY}/stock/${symbol}/summary`)
+    if (!res.ok) return null
+    const data = await res.json()
+    const g = data?.summary?.general
+    if (!g) return null
+
+    const currentPrice = parseFloat(g.price) || 0
+    const high52w = parseFloat(g.price52whigh) || 0
+    const dropFrom52w = high52w > 0 ? ((currentPrice - high52w) / high52w) * 100 : 0
+
+    return {
+      symbol,
+      company: g.company ?? symbol,
+      sector: g.sector ?? "",
+      currentPrice,
+      high52w,
+      dropFrom52w,
+      gfScore: parseInt(g.gf_score) || 0,
+      rankFinancialStrength: parseInt(g.rank_financial_strength) || 0,
+      rankProfitability: parseInt(g.rank_profitability) || 0,
+      rankGrowth: parseInt(g.rank_growth) || 0,
+      roic: parseFloat(g.roic) || 0,
+      debtToEquity: parseFloat(g.debt2equity) || 0,
+      peRatio: parseFloat(g.pe_ratio) || 0,
+      gfValue: parseFloat(g.gf_value) || 0,
+      gfValuation: g.gf_valuation ?? "",
+      marginGfValue: parseFloat(g.margin_gf_value) || 0,
+    }
+  } catch {
+    return null
+  }
+}
 
 const VALUATION_COLOR: Record<string, string> = {
   "Significantly Undervalued": "text-green-400",
@@ -28,17 +85,14 @@ function DropBadge({ value }: { value: number }) {
     value <= -30 ? "text-green-400" :
     value <= -15 ? "text-yellow-300" :
                    "text-gray-400"
-  return (
-    <span className={`font-bold font-mono ${color}`}>
-      {value.toFixed(1)}%
-    </span>
-  )
+  return <span className={`font-bold font-mono ${color}`}>{value.toFixed(1)}%</span>
 }
 
 export default function Home() {
   const [stocks, setStocks] = useState<StockResult[]>([])
   const [loading, setLoading] = useState(false)
   const [ran, setRan] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [universe, setUniverse] = useState<"dia" | "sp500">("dia")
   const [minDrop, setMinDrop] = useState(0)
   const [minGfScore, setMinGfScore] = useState(0)
@@ -48,27 +102,35 @@ export default function Home() {
     setLoading(true)
     setRan(false)
     setStocks([])
-    try {
-      const params = new URLSearchParams({
-        universe,
-        minDrop: String(minDrop),
-        minGfScore: String(minGfScore),
-        ...(universe === "sp500" ? { limit: String(limit) } : {}),
-      })
-      const res = await fetch(`/api/screener?${params}`)
-      const data = await res.json()
-      setStocks(data.stocks ?? [])
-    } finally {
-      setLoading(false)
-      setRan(true)
+    setProgress(0)
+
+    const symbols = universe === "dia" ? DJIA_SYMBOLS : SP500_SYMBOLS.slice(0, limit)
+    const results: StockResult[] = []
+    let done = 0
+
+    // Fetch en batches de 5 para no sobrecargar
+    const batchSize = 5
+    for (let i = 0; i < symbols.length; i += batchSize) {
+      const batch = symbols.slice(i, i + batchSize)
+      const fetched = await Promise.all(batch.map(fetchStock))
+      fetched.forEach((s) => { if (s) results.push(s) })
+      done += batch.length
+      setProgress(Math.round((done / symbols.length) * 100))
     }
+
+    const filtered = results
+      .filter((s) => s.dropFrom52w <= minDrop && s.gfScore >= minGfScore)
+      .sort((a, b) => a.dropFrom52w - b.dropFrom52w)
+
+    setStocks(filtered)
+    setLoading(false)
+    setRan(true)
   }
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
 
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white">Descuentos</h1>
           <p className="text-gray-400 mt-1">
@@ -76,7 +138,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Filtros */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 flex flex-wrap gap-6 items-end">
 
           <div>
@@ -92,16 +153,10 @@ export default function Home() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1">
-              Caída mínima desde máximo 52 semanas
-            </label>
+            <label className="block text-xs text-gray-400 mb-1">Caída mínima desde máx. 52 semanas</label>
             <div className="flex items-center gap-2">
-              <input
-                type="range" min={-80} max={0} step={5}
-                value={minDrop}
-                onChange={(e) => setMinDrop(Number(e.target.value))}
-                className="w-32"
-              />
+              <input type="range" min={-80} max={0} step={5}
+                value={minDrop} onChange={(e) => setMinDrop(Number(e.target.value))} className="w-32" />
               <span className="text-white font-bold w-16">{minDrop}%</span>
             </div>
           </div>
@@ -109,12 +164,8 @@ export default function Home() {
           <div>
             <label className="block text-xs text-gray-400 mb-1">GF Score mínimo</label>
             <div className="flex items-center gap-2">
-              <input
-                type="range" min={0} max={100} step={5}
-                value={minGfScore}
-                onChange={(e) => setMinGfScore(Number(e.target.value))}
-                className="w-32"
-              />
+              <input type="range" min={0} max={100} step={5}
+                value={minGfScore} onChange={(e) => setMinGfScore(Number(e.target.value))} className="w-32" />
               <span className="text-white font-bold w-10">{minGfScore}</span>
             </div>
           </div>
@@ -122,11 +173,8 @@ export default function Home() {
           {universe === "sp500" && (
             <div>
               <label className="block text-xs text-gray-400 mb-1">Acciones a consultar</label>
-              <select
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value))}
-                className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white"
-              >
+              <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}
+                className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white">
                 <option value={50}>50</option>
                 <option value={100}>100</option>
                 <option value={200}>200</option>
@@ -134,30 +182,18 @@ export default function Home() {
             </div>
           )}
 
-          <button
-            onClick={runScreener}
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-blue-400 text-white font-semibold px-5 py-2 rounded-lg transition-colors"
-          >
-            {loading ? "Consultando..." : "Buscar descuentos"}
+          <button onClick={runScreener} disabled={loading}
+            className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-blue-400 text-white font-semibold px-5 py-2 rounded-lg transition-colors">
+            {loading ? `Consultando... ${progress}%` : "Buscar descuentos"}
           </button>
         </div>
 
-        {/* Loading */}
-        {loading && (
-          <div className="text-center py-20 text-gray-400">
-            Consultando GuruFocus...
-          </div>
-        )}
-
-        {/* Sin resultados */}
         {ran && !loading && stocks.length === 0 && (
           <div className="text-center py-20 text-gray-400">
             No se encontraron empresas con los filtros aplicados.
           </div>
         )}
 
-        {/* Tabla */}
         {stocks.length > 0 && (
           <>
             <div className="text-sm text-gray-400 mb-3">
