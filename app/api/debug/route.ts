@@ -1,3 +1,5 @@
+export const runtime = "edge"
+
 export async function GET() {
   const key = process.env.GURUFOCUS_API_KEY
   const url = `https://api.gurufocus.com/public/user/${key}/stock/AAPL/summary`
