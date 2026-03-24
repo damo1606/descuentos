@@ -40,7 +40,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [ran, setRan] = useState(false)
   const [universe, setUniverse] = useState<"dia" | "sp500">("dia")
-  const [minDrop, setMinDrop] = useState(-100)
+  const [minDrop, setMinDrop] = useState(0)
   const [minGfScore, setMinGfScore] = useState(0)
   const [limit, setLimit] = useState(50)
 
