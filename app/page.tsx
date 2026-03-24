@@ -72,7 +72,7 @@ export default function Home() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white">Descuentos</h1>
           <p className="text-gray-400 mt-1">
-            Empresas de calidad castigadas por el mercado — Yahoo Finance + GuruFocus
+            Empresas de calidad castigadas por el mercado — GuruFocus
           </p>
         </div>
 
@@ -93,7 +93,7 @@ export default function Home() {
 
           <div>
             <label className="block text-xs text-gray-400 mb-1">
-              Caída mínima desde ATH
+              Caída mínima desde máximo 52 semanas
             </label>
             <div className="flex items-center gap-2">
               <input
@@ -146,7 +146,7 @@ export default function Home() {
         {/* Loading */}
         {loading && (
           <div className="text-center py-20 text-gray-400">
-            Consultando Yahoo Finance + GuruFocus...
+            Consultando GuruFocus...
           </div>
         )}
 
@@ -161,7 +161,7 @@ export default function Home() {
         {stocks.length > 0 && (
           <>
             <div className="text-sm text-gray-400 mb-3">
-              {stocks.length} empresas — ordenadas por mayor caída desde ATH
+              {stocks.length} empresas — ordenadas por mayor caída desde máximo 52 semanas
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -170,8 +170,8 @@ export default function Home() {
                     <th className="pb-2 pr-4">Empresa</th>
                     <th className="pb-2 pr-4">Sector</th>
                     <th className="pb-2 pr-4 text-right">Precio</th>
-                    <th className="pb-2 pr-4 text-right">ATH</th>
-                    <th className="pb-2 pr-4 text-right">Caída ATH</th>
+                    <th className="pb-2 pr-4 text-right">Máx. 52w</th>
+                    <th className="pb-2 pr-4 text-right">Caída</th>
                     <th className="pb-2 pr-4 text-right">GF Value</th>
                     <th className="pb-2 pr-4">Valoración</th>
                     <th className="pb-2 pr-4 text-center">GF Score</th>
@@ -192,13 +192,8 @@ export default function Home() {
                       </td>
                       <td className="py-3 pr-4 text-gray-400 text-xs max-w-[100px] truncate">{s.sector}</td>
                       <td className="py-3 pr-4 text-right font-mono">${s.currentPrice.toFixed(2)}</td>
-                      <td className="py-3 pr-4 text-right font-mono text-gray-400">
-                        <div>${s.ath.toFixed(2)}</div>
-                        <div className="text-xs text-gray-600">{s.athDate}</div>
-                      </td>
-                      <td className="py-3 pr-4 text-right">
-                        <DropBadge value={s.dropFromAth} />
-                      </td>
+                      <td className="py-3 pr-4 text-right font-mono text-gray-400">${s.high52w.toFixed(2)}</td>
+                      <td className="py-3 pr-4 text-right"><DropBadge value={s.dropFrom52w} /></td>
                       <td className="py-3 pr-4 text-right font-mono text-gray-300">${s.gfValue.toFixed(2)}</td>
                       <td className="py-3 pr-4">
                         <span className={`text-xs ${VALUATION_COLOR[s.gfValuation] ?? "text-gray-400"}`}>
