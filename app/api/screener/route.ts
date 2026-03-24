@@ -31,18 +31,37 @@ export async function GET(request: Request) {
     ? DJIA_SYMBOLS
     : SP500_SYMBOLS.slice(0, limit)
 
+  const hasApiKey = !!process.env.GURUFOCUS_API_KEY
+
   const results = await Promise.allSettled(
     symbols.map((symbol) => fetchGuruData(symbol))
   )
 
-  const stocks: StockResult[] = results
+  const fetched = results
     .filter(
       (r): r is PromiseFulfilledResult<NonNullable<Awaited<ReturnType<typeof fetchGuruData>>>> =>
         r.status === "fulfilled" && r.value !== null
     )
     .map((r) => r.value)
+
+  const stocks: StockResult[] = fetched
     .filter((s) => s.dropFrom52w <= minDrop && s.gfScore >= minGfScore)
     .sort((a, b) => a.dropFrom52w - b.dropFrom52w)
 
-  return Response.json({ stocks, total: stocks.length })
+  return Response.json({
+    stocks,
+    total: stocks.length,
+    debug: {
+      hasApiKey,
+      symbolsQueried: symbols.length,
+      fetchedOk: fetched.length,
+      afterFilter: stocks.length,
+      filters: { minDrop, minGfScore },
+      sample: fetched.slice(0, 3).map(s => ({
+        symbol: s.symbol,
+        dropFrom52w: s.dropFrom52w,
+        gfScore: s.gfScore,
+      })),
+    },
+  })
 }
