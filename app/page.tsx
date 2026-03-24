@@ -28,7 +28,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [ran, setRan] = useState(false)
   const [universe, setUniverse] = useState<"dia" | "sp500">("dia")
-  const [minDiscount, setMinDiscount] = useState(0)
+  const [minDiscount, setMinDiscount] = useState(-100)
   const [minGfScore, setMinGfScore] = useState(0)
   const [limit, setLimit] = useState(50)
 
@@ -95,13 +95,13 @@ export default function Home() {
             <div className="flex items-center gap-2">
               <input
                 type="range"
-                min={0}
+                min={-100}
                 max={50}
                 value={minDiscount}
                 onChange={(e) => setMinDiscount(Number(e.target.value))}
                 className="w-32"
               />
-              <span className="text-white font-bold w-10">{minDiscount}%</span>
+              <span className="text-white font-bold w-16">{minDiscount}%</span>
             </div>
           </div>
 
