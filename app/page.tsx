@@ -49,6 +49,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [ran, setRan] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [fetchedCount, setFetchedCount] = useState(0)
   const [universe, setUniverse] = useState<"dia" | "sp500">("dia")
   const [minDrop, setMinDrop] = useState(0)
   const [minGfScore, setMinGfScore] = useState(0)
@@ -59,12 +60,12 @@ export default function Home() {
     setRan(false)
     setStocks([])
     setProgress(0)
+    setFetchedCount(0)
 
     const symbols = universe === "dia" ? DJIA_SYMBOLS : SP500_SYMBOLS.slice(0, limit)
     const results: StockResult[] = []
     let done = 0
 
-    // Fetch en batches de 5 para no sobrecargar
     const batchSize = 5
     for (let i = 0; i < symbols.length; i += batchSize) {
       const batch = symbols.slice(i, i + batchSize)
@@ -72,6 +73,7 @@ export default function Home() {
       fetched.forEach((s) => { if (s) results.push(s) })
       done += batch.length
       setProgress(Math.round((done / symbols.length) * 100))
+      setFetchedCount(results.length)
     }
 
     const filtered = results
@@ -144,9 +146,22 @@ export default function Home() {
           </button>
         </div>
 
-        {ran && !loading && stocks.length === 0 && (
+        {loading && fetchedCount > 0 && (
+          <div className="text-center text-sm text-gray-400 mb-4">
+            {fetchedCount} acciones obtenidas hasta ahora...
+          </div>
+        )}
+
+        {ran && !loading && stocks.length === 0 && fetchedCount === 0 && (
+          <div className="text-center py-20">
+            <p className="text-red-400 font-semibold">No se pudo obtener datos de la API.</p>
+            <p className="text-gray-500 text-sm mt-2">Verifica que GURUFOCUS_API_KEY esté configurada en Vercel.</p>
+          </div>
+        )}
+
+        {ran && !loading && stocks.length === 0 && fetchedCount > 0 && (
           <div className="text-center py-20 text-gray-400">
-            No se encontraron empresas con los filtros aplicados.
+            Se consultaron {fetchedCount} acciones pero ninguna cumple los filtros aplicados. Intenta reducirlos.
           </div>
         )}
 
