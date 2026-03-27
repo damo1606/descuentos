@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { DJIA_SYMBOLS, SP500_SYMBOLS } from "@/lib/symbols"
 import type { StockData } from "@/lib/yahoo"
 
@@ -87,9 +88,15 @@ export default function Home() {
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="max-w-full mx-auto px-2">
 
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white">Descuentos</h1>
-          <p className="text-gray-400 mt-1">Empresas de calidad castigadas por el mercado — Yahoo Finance</p>
+        <div className="flex items-center gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Descuentos</h1>
+            <p className="text-gray-400 mt-1">Empresas de calidad castigadas por el mercado — Yahoo Finance</p>
+          </div>
+          <Link href="/parte1"
+            className="ml-auto bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700">
+            Parte 1 — Valoración →
+          </Link>
         </div>
 
         {/* Filtros */}
