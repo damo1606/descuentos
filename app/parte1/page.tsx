@@ -328,6 +328,13 @@ export default function Parte1() {
                         </div>
                       )}
 
+                      {/* Contexto sectorial */}
+                      <div className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 mb-5 flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                        <div><span className="text-gray-600">Sector: </span><span className="text-gray-300 font-medium">{sc.sectorLabel}</span></div>
+                        <div><span className="text-gray-600">Tipo de moat: </span><span className="text-blue-300 font-medium">{sc.moatType}</span></div>
+                        <div><span className="text-gray-600">CAP estimado: </span><span className="text-yellow-300 font-medium">{sc.capRange}</span></div>
+                      </div>
+
                       {/* Barras de pilares */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         <div className="space-y-3">
@@ -341,18 +348,18 @@ export default function Parte1() {
                         {/* Métricas clave */}
                         <div>
                           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Métricas clave</div>
+                          <Metric label="ROIC" value={s.roic > 0 ? pct(s.roic * 100) : "—"}
+                            good={s.roic >= 0.12} note="Retorno sobre capital invertido — ROIC > WACC = moat real" />
                           <Metric label="ROE" value={pct(s.roe * 100)}
-                            good={s.roe >= 0.20} note="> 20% excelente" />
+                            good={s.roe >= 0.20} note="> 20% excelente (referencia secundaria)" />
                           <Metric label="ROA" value={pct(s.roa * 100)}
                             good={s.roa >= 0.10} note="> 10% muy bueno" />
                           <Metric label="FCF Margin" value={pct(s.fcfMargin * 100)}
                             good={s.fcfMargin >= 0.15} note="> 15% excelente" />
                           <Metric label="Margen Bruto" value={pct(s.grossMargin * 100)}
-                            good={s.grossMargin >= 0.40} note="> 40% moat visible" />
+                            good={s.grossMargin >= 0.40} note="Calibrado vs sector" />
                           <Metric label="Margen Operativo" value={pct(s.operatingMargin * 100)}
-                            good={s.operatingMargin >= 0.20} note="> 20% muy bueno" />
-                          <Metric label="Margen Neto" value={pct(s.netMargin * 100)}
-                            good={s.netMargin >= 0.10} />
+                            good={s.operatingMargin >= 0.20} note="Calibrado vs sector" />
                           <Metric label="Deuda / Patrimonio" value={s.debtToEquity > 0 ? `${(s.debtToEquity / 100).toFixed(2)}x` : "—"}
                             good={s.debtToEquity > 0 ? s.debtToEquity < 100 : null} note="< 1.0x conservador" />
                         </div>
@@ -399,6 +406,72 @@ export default function Parte1() {
                             ? `$${(s.marketCap / 1e12).toFixed(1)}T`
                             : `$${(s.marketCap / 1e9).toFixed(0)}B`} good={null} />
                         </div>
+                      </div>
+
+                      {/* Sección Dividendos */}
+                      <div className="mt-5 pt-5 border-t border-gray-800">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Valoración por Dividendos Crecientes</div>
+                          {s.isDividendPayer && sc.dividendScore !== null && (
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                              sc.dividendGrade === "Excelente" ? "bg-emerald-600 text-white" :
+                              sc.dividendGrade === "Bueno"     ? "bg-green-700 text-white" :
+                              sc.dividendGrade === "Moderado"  ? "bg-yellow-700 text-white" :
+                              "bg-red-800 text-white"
+                            }`}>{sc.dividendGrade} — {sc.dividendScore}/100</span>
+                          )}
+                        </div>
+
+                        {!s.isDividendPayer ? (
+                          <p className="text-xs text-gray-600 italic">Esta empresa no paga dividendos — el modelo DDM no aplica.</p>
+                        ) : (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1.5 font-semibold">Yield & Tasa</div>
+                              <Metric label="Dividend Yield" value={s.dividendYield > 0 ? pct(s.dividendYield * 100) : "—"}
+                                good={s.dividendYield >= 0.02} note="> 2% para ingreso real" />
+                              <Metric label="Dividendo anual" value={s.dividendRate > 0 ? `$${s.dividendRate.toFixed(2)}` : "—"}
+                                good={null} />
+                              <Metric label="Yield prom. 5 años" value={s.fiveYearAvgYield > 0 ? pct(s.fiveYearAvgYield) : "—"}
+                                good={null} note="Contexto histórico" />
+                              <Metric label="Yield vs histórico"
+                                value={s.fiveYearAvgYield > 0
+                                  ? `${((s.dividendYield / (s.fiveYearAvgYield / 100)) * 100).toFixed(0)}%`
+                                  : "—"}
+                                good={s.fiveYearAvgYield > 0 ? s.dividendYield >= (s.fiveYearAvgYield / 100) : null}
+                                note="> 100% = yield encima de su media" />
+                            </div>
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1.5 font-semibold">Sostenibilidad</div>
+                              <Metric label="Payout ratio (EPS)" value={s.payoutRatio > 0 ? pct(s.payoutRatio * 100) : "—"}
+                                good={s.payoutRatio > 0 ? s.payoutRatio < 0.60 : null} note="< 60% conservador" />
+                              <Metric label="Payout ratio (FCF)" value={s.fcfPayoutRatio > 0 ? pct(s.fcfPayoutRatio * 100) : "—"}
+                                good={s.fcfPayoutRatio > 0 ? s.fcfPayoutRatio < 0.60 : null} note="< 60% seguro" />
+                              <Metric label="FCF Margin" value={pct(s.fcfMargin * 100)}
+                                good={s.fcfMargin >= 0.12} note="Sustenta el dividendo" />
+                            </div>
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1.5 font-semibold">Gordon Growth Model</div>
+                              <Metric label="Tasa crecim. estimada" value={pct(s.ddmGrowthRate * 100, 1)}
+                                good={null} note="70% del EPS growth, máx 8%" />
+                              <Metric label="Valor intrínseco (DDM)" value={s.ddmValue > 0 ? `$${s.ddmValue.toFixed(2)}` : "—"}
+                                good={null} note="D₁ / (r – g), r=10%" />
+                              <Metric label="Descuento vs DDM" value={s.ddmValue > 0 ? pct(s.ddmDiscount) : "—"}
+                                good={s.ddmValue > 0 ? s.ddmDiscount >= 0 : null}
+                                note="Positivo = cotiza bajo valor DDM" />
+                            </div>
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1.5 font-semibold">Contexto</div>
+                              <p className="text-[11px] text-gray-500 leading-relaxed">
+                                El modelo DDM (Gordon Growth) valora el dividendo futuro descontado a una tasa de retorno requerida del <strong className="text-gray-400">10%</strong>.
+                                Un descuento positivo indica que el precio actual cotiza por debajo del valor intrínseco basado en dividendos.
+                              </p>
+                              <p className="text-[11px] text-gray-600 leading-relaxed mt-2">
+                                El FCF payout ratio es más conservador que el EPS payout: mide si la empresa genera suficiente flujo de caja real para sostener el dividendo sin endeudarse.
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

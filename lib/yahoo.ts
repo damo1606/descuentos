@@ -116,6 +116,19 @@ export type StockData = {
   // FCF adicional
   totalRevenue: number
   fcfMargin: number       // FCF / Revenue
+  totalDebt: number
+  totalCash: number
+  roic: number            // NOPAT / Invested Capital — métrica clave de moat real
+
+  // Dividendos
+  dividendRate: number          // Dividendo anual por acción ($/año)
+  payoutRatio: number           // % de earnings pagado como dividendo
+  fiveYearAvgYield: number      // Yield promedio últimos 5 años
+  fcfPayoutRatio: number        // Dividendos pagados / FCF (más conservador)
+  ddmGrowthRate: number         // Tasa de crecimiento usada en DDM
+  ddmValue: number              // Valor intrínseco DDM (Gordon Growth Model)
+  ddmDiscount: number           // % descuento vs DDM (positivo = barato)
+  isDividendPayer: boolean
 
   // Score compuesto (0-100) — legacy, mantenido para compatibilidad
   valueScore: number
@@ -269,6 +282,51 @@ export async function fetchStockData(symbol: string): Promise<StockData | null> 
       fcfMargin: (financial.totalRevenue?.raw ?? 0) > 0
         ? (freeCashflow / financial.totalRevenue.raw)
         : 0,
+      totalDebt: financial.totalDebt?.raw ?? 0,
+      totalCash: financial.totalCash?.raw ?? 0,
+      roic: (() => {
+        const revenue    = financial.totalRevenue?.raw ?? 0
+        const opMargin   = financial.operatingMargins?.raw ?? 0
+        const totalDebt  = financial.totalDebt?.raw ?? 0
+        const totalCash  = financial.totalCash?.raw ?? 0
+        const bookEquity = (stats.bookValue?.raw ?? 0) * (stats.sharesOutstanding?.raw ?? 0)
+        const nopat      = revenue * opMargin * (1 - 0.21)      // tasa corporativa EEUU ~21%
+        const netDebt    = Math.max(totalDebt - totalCash, 0)
+        const invested   = bookEquity + netDebt
+        return invested > 0 && nopat > 0 ? nopat / invested : 0
+      })(),
+
+      // ── Dividendos ───────────────────────────────────────────────────────
+      dividendRate:      summary.dividendRate?.raw ?? summary.trailingAnnualDividendRate?.raw ?? 0,
+      payoutRatio:       summary.payoutRatio?.raw ?? 0,
+      fiveYearAvgYield:  summary.fiveYearAvgDividendYield?.raw ?? 0,
+      fcfPayoutRatio: (() => {
+        const divRate = summary.dividendRate?.raw ?? summary.trailingAnnualDividendRate?.raw ?? 0
+        const divsPaid = divRate > 0 && sharesOutstanding > 0 ? divRate * sharesOutstanding : 0
+        return freeCashflow > 0 && divsPaid > 0 ? divsPaid / freeCashflow : 0
+      })(),
+      ddmGrowthRate: (() => {
+        const g = (financial.earningsGrowth?.raw ?? 0) * 0.7
+        return Math.min(Math.max(g, 0), 0.08)
+      })(),
+      ddmValue: (() => {
+        const divRate = summary.dividendRate?.raw ?? summary.trailingAnnualDividendRate?.raw ?? 0
+        if (divRate <= 0) return 0
+        const g = Math.min(Math.max((financial.earningsGrowth?.raw ?? 0) * 0.7, 0), 0.08)
+        const r = 0.10
+        if (r <= g) return 0
+        return (divRate * (1 + g)) / (r - g)
+      })(),
+      ddmDiscount: (() => {
+        const divRate = summary.dividendRate?.raw ?? summary.trailingAnnualDividendRate?.raw ?? 0
+        if (divRate <= 0 || currentPrice <= 0) return 0
+        const g = Math.min(Math.max((financial.earningsGrowth?.raw ?? 0) * 0.7, 0), 0.08)
+        const r = 0.10
+        if (r <= g) return 0
+        const ddm = (divRate * (1 + g)) / (r - g)
+        return ddm > 0 ? ((ddm - currentPrice) / currentPrice) * 100 : 0
+      })(),
+      isDividendPayer: (summary.dividendRate?.raw ?? summary.trailingAnnualDividendRate?.raw ?? 0) > 0,
 
       valueScore:     Math.round(valueScore),
       qualityScore:   Math.round(qualityScore),

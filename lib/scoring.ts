@@ -1,4 +1,5 @@
 import type { StockData } from "./yahoo"
+import { getSectorConfig } from "./sectors"
 
 // Interpola linealmente entre breakpoints
 function lerp(v: number, bp: [number, number, number, number], out: [number, number, number, number]): number {
@@ -17,21 +18,29 @@ function clamp(v: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, v))
 }
 
+const OUT: [number, number, number, number] = [0, 25, 65, 100]
+
 export type ScoreBreakdown = {
   // Pilar 1: Eficiencia del Capital (30%)
-  roeScore: number         // Retorno sobre patrimonio
-  roaScore: number         // Retorno sobre activos
+  roicScore: number        // ROIC — métrica principal de retorno sobre capital
+  roeScore: number         // ROE — referencia secundaria
+  roaScore: number         // ROA — eficiencia sin efecto apalancamiento
   fcfMarginScore: number   // FCF / Revenue
   capitalScore: number     // 0-100
 
-  // Pilar 2: Ventaja Competitiva / Moat (30%)
-  grossMarginScore: number    // Margen bruto — poder de fijación de precios
+  // Pilar 2: Ventaja Competitiva / Moat (30%) — breakpoints sectoriales
+  grossMarginScore: number
   operatingMarginScore: number
   netMarginScore: number
   moatScore: number        // 0-100
 
+  // Contexto sectorial del moat
+  sectorLabel: string      // Nombre del sector en español
+  moatType: string         // Tipo de moat dominante
+  capRange: string         // Rango de CAP típico del sector
+
   // Pilar 3: Solidez Financiera (20%)
-  debtScore: number        // Nivel de deuda
+  debtScore: number
   healthScore: number      // 0-100
 
   // Pilar 4: Precio (20%)
@@ -44,77 +53,76 @@ export type ScoreBreakdown = {
   qualityScore: number     // Pilar 1+2+3 (0-100)
   finalScore: number       // 80% quality + 20% price (0-100)
   grade: "A+" | "A" | "B" | "C" | "D" | "F"
-  verdict: string          // Resumen en una línea
-  strengths: string[]      // Puntos fuertes
-  weaknesses: string[]     // Puntos débiles
+  verdict: string
+  strengths: string[]
+  weaknesses: string[]
+
+  // Dividendos (null si no paga)
+  dividendScore: number | null
+  dividendGrade: "Excelente" | "Bueno" | "Moderado" | "Débil" | "No aplica"
 }
 
 export function scoreStock(s: StockData): ScoreBreakdown {
+  const sector = getSectorConfig(s.sector)
+
   // ── Pilar 1: Eficiencia del Capital ──────────────────────────────────────
-  // ROE: cuánto retorno genera por cada dólar de patrimonio
-  // > 20% = excelente (Buffett exige esto consistentemente)
-  const roeScore = clamp(lerp(s.roe * 100, [0, 10, 20, 35], [0, 25, 65, 100]))
+  // ROIC: el mejor indicador de si el negocio crea valor económico real
+  // ROIC > WACC → moat real. Breakpoints según sector (Damodaran)
+  const roicScore = clamp(lerp(s.roic * 100, sector.roicBp, OUT))
 
-  // ROA: eficiencia usando todos los activos (no inflado por deuda)
-  // > 10% = muy bueno, > 15% = excepcional
-  const roaScore = clamp(lerp(s.roa * 100, [0, 5, 10, 18], [0, 25, 65, 100]))
+  // ROE: referencia secundaria — puede inflarse con deuda, por eso ROIC es primario
+  const roeScore = clamp(lerp(s.roe * 100, sector.roeBp, OUT))
 
-  // FCF Margin: FCF / Revenue — cuánto cash real genera por cada dólar vendido
-  // > 15% = excelente, > 25% = negocio extraordinario
-  const fcfMarginScore = clamp(lerp(s.fcfMargin * 100, [0, 8, 18, 28], [0, 25, 65, 100]))
+  // ROA: eficiencia usando todos los activos, sin trampa del apalancamiento
+  const roaScore = clamp(lerp(s.roa * 100, [0, 5, 10, 18], OUT))
+
+  // FCF Margin: cuánto cash real genera por cada dólar vendido
+  const fcfMarginScore = clamp(lerp(s.fcfMargin * 100, [0, 8, 18, 28], OUT))
 
   const capitalScore = clamp(
-    roeScore * 0.40 +
-    roaScore * 0.35 +
+    roicScore    * 0.45 +   // ROIC es el driver principal
+    roaScore     * 0.30 +
     fcfMarginScore * 0.25
   )
 
-  // ── Pilar 2: Ventaja Competitiva (Moat) ──────────────────────────────────
-  // Gross Margin: el indicador #1 de moat — si puedes cobrar más que tus costos
-  // < 30% = commodity, 40-60% = bueno, > 60% = excepcional (Apple, MSFT, Visa)
-  const grossMarginScore = clamp(lerp(s.grossMargin * 100, [15, 30, 50, 70], [0, 25, 65, 100]))
+  // ── Pilar 2: Ventaja Competitiva (Moat) — breakpoints sectoriales ─────────
+  // Gross Margin: pricing power. Breakpoints distintos por sector (Damodaran)
+  // Un retailer con 35% es excelente. Un SaaS con 35% es mediocre.
+  const grossMarginScore = clamp(lerp(s.grossMargin * 100, sector.grossMarginBp, OUT))
 
-  // Operating Margin: eficiencia operativa después de G&A
-  // > 20% = muy bueno, > 30% = excepcional
-  const operatingMarginScore = clamp(lerp(s.operatingMargin * 100, [0, 10, 22, 35], [0, 25, 65, 100]))
+  // Operating Margin: eficiencia operativa después de G&A y R&D
+  const operatingMarginScore = clamp(lerp(s.operatingMargin * 100, sector.operatingMarginBp, OUT))
 
-  // Net Margin: resultado final
-  const netMarginScore = clamp(lerp(s.netMargin * 100, [0, 8, 18, 30], [0, 25, 65, 100]))
+  // Net Margin: resultado final después de impuestos e intereses
+  const netMarginScore = clamp(lerp(s.netMargin * 100, sector.netMarginBp, OUT))
 
+  // Pesos también sectoriales — financieros: gross margin casi no importa
   const moatScore = clamp(
-    grossMarginScore * 0.45 +
-    operatingMarginScore * 0.35 +
-    netMarginScore * 0.20
+    grossMarginScore    * sector.grossMarginWeight +
+    operatingMarginScore * sector.operatingMarginWeight +
+    netMarginScore      * sector.netMarginWeight
   )
 
   // ── Pilar 3: Solidez Financiera ───────────────────────────────────────────
-  // D/E ratio: deuda/patrimonio — más bajo es mejor
-  // Yahoo lo reporta en %, dividimos entre 100
   const de = s.debtToEquity / 100
   const debtScore = clamp(lerp(-de, [-4, -2, -0.5, 0], [0, 20, 70, 100]))
-
   const healthScore = clamp(debtScore)
 
   // ── Pilar 4: Precio ───────────────────────────────────────────────────────
-  // P/FCF: precio vs flujo de caja libre — el ratio más honesto
-  // < 15 = barato, < 10 = muy barato, > 30 = caro para lo que ofrece
   const pfcfScore = s.pFcf > 0
     ? clamp(lerp(-s.pFcf, [-60, -30, -15, -5], [0, 20, 65, 100]))
-    : 50 // Sin dato, neutral
+    : 50
 
-  // EV/EBITDA: valoración sobre el negocio operativo sin efectos de deuda
-  // < 12 = atractivo, < 8 = muy barato, > 25 = caro
   const evEbitdaScore = s.evToEbitda > 0
     ? clamp(lerp(-s.evToEbitda, [-40, -20, -10, -5], [0, 20, 65, 100]))
     : 50
 
-  // Upside a analistas: el consenso de Wall Street
   const upsideScore = clamp(lerp(s.upsideToTarget, [-10, 0, 15, 35], [0, 20, 60, 100]))
 
   const priceScore = clamp(
-    pfcfScore * 0.45 +
+    pfcfScore    * 0.45 +
     evEbitdaScore * 0.35 +
-    upsideScore * 0.20
+    upsideScore  * 0.20
   )
 
   // ── Score Final ───────────────────────────────────────────────────────────
@@ -125,8 +133,8 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   )
 
   const finalScore = clamp(
-    qualityScore * 0.80 +    // 80% calidad
-    priceScore   * 0.20      // 20% precio
+    qualityScore * 0.80 +
+    priceScore   * 0.20
   )
 
   // ── Grade ─────────────────────────────────────────────────────────────────
@@ -141,8 +149,9 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   const strengths: string[] = []
   const weaknesses: string[] = []
 
+  if (s.roic * 100 >= 15)          strengths.push(`ROIC ${(s.roic * 100).toFixed(0)}% — genera valor económico real por encima del costo de capital`)
   if (s.roe * 100 >= 20)           strengths.push(`ROE ${(s.roe * 100).toFixed(0)}% — retorno excepcional sobre patrimonio`)
-  if (s.grossMargin * 100 >= 50)   strengths.push(`Margen bruto ${(s.grossMargin * 100).toFixed(0)}% — fuerte poder de fijación de precios`)
+  if (s.grossMargin * 100 >= 50)   strengths.push(`Margen bruto ${(s.grossMargin * 100).toFixed(0)}% — fuerte pricing power vs su sector`)
   if (s.fcfMargin * 100 >= 18)     strengths.push(`FCF margin ${(s.fcfMargin * 100).toFixed(0)}% — genera cash de forma consistente`)
   if (s.operatingMargin * 100 >= 22) strengths.push(`Margen operativo ${(s.operatingMargin * 100).toFixed(0)}% — eficiencia operativa alta`)
   if (de <= 0.5)                   strengths.push("Balance limpio — deuda muy baja")
@@ -150,6 +159,7 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   if (s.upsideToTarget >= 20)      strengths.push(`+${s.upsideToTarget.toFixed(0)}% upside según analistas`)
   if (s.earningsGrowth * 100 >= 15) strengths.push(`Crecimiento EPS ${(s.earningsGrowth * 100).toFixed(0)}% — momentum de ganancias`)
 
+  if (s.roic * 100 < 8 && s.roic > 0) weaknesses.push(`ROIC ${(s.roic * 100).toFixed(0)}% — posiblemente por debajo del costo de capital`)
   if (s.roe * 100 < 10)            weaknesses.push(`ROE ${(s.roe * 100).toFixed(0)}% — retorno bajo sobre patrimonio`)
   if (s.grossMargin * 100 < 30)    weaknesses.push(`Margen bruto ${(s.grossMargin * 100).toFixed(0)}% — sin poder de fijación de precios`)
   if (s.fcfMargin * 100 < 5)       weaknesses.push("FCF margin bajo — el negocio consume más cash del que genera")
@@ -158,10 +168,43 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   if (s.earningsGrowth * 100 < 0)  weaknesses.push("EPS decreciendo — el negocio está perdiendo tracción")
   if (s.netMargin * 100 < 5)       weaknesses.push(`Margen neto ${(s.netMargin * 100).toFixed(0)}% — márgenes muy ajustados`)
 
+  // ── Dividendos ────────────────────────────────────────────────────────────
+  let dividendScore: number | null = null
+  let dividendGrade: ScoreBreakdown["dividendGrade"] = "No aplica"
+
+  if (s.isDividendPayer) {
+    const yieldVsAvg = s.fiveYearAvgYield > 0
+      ? clamp(lerp(s.dividendYield / (s.fiveYearAvgYield / 100), [0.7, 0.9, 1.1, 1.4], OUT))
+      : 50
+
+    const payoutSafe = clamp(lerp(s.payoutRatio, [0, 0.35, 0.60, 0.85], [100, 75, 35, 0]))
+
+    const fcfPayout = s.fcfPayoutRatio > 0
+      ? clamp(lerp(s.fcfPayoutRatio, [0, 0.30, 0.60, 0.90], [100, 75, 35, 0]))
+      : 50
+
+    const ddmSignal = s.ddmValue > 0
+      ? clamp(lerp(s.ddmDiscount, [-30, 0, 20, 50], OUT))
+      : 50
+
+    dividendScore = Math.round(clamp(
+      yieldVsAvg * 0.20 +
+      payoutSafe * 0.30 +
+      fcfPayout  * 0.30 +
+      ddmSignal  * 0.20
+    ))
+
+    dividendGrade =
+      dividendScore >= 75 ? "Excelente" :
+      dividendScore >= 55 ? "Bueno" :
+      dividendScore >= 35 ? "Moderado" : "Débil"
+  }
+
   // ── Veredicto ─────────────────────────────────────────────────────────────
   const verdict = buildVerdict(grade, capitalScore, moatScore, healthScore, priceScore, s)
 
   return {
+    roicScore:            Math.round(roicScore),
     roeScore:             Math.round(roeScore),
     roaScore:             Math.round(roaScore),
     fcfMarginScore:       Math.round(fcfMarginScore),
@@ -170,6 +213,9 @@ export function scoreStock(s: StockData): ScoreBreakdown {
     operatingMarginScore: Math.round(operatingMarginScore),
     netMarginScore:       Math.round(netMarginScore),
     moatScore:            Math.round(moatScore),
+    sectorLabel:          sector.label,
+    moatType:             sector.moatType,
+    capRange:             sector.capRange,
     debtScore:            Math.round(debtScore),
     healthScore:          Math.round(healthScore),
     pfcfScore:            Math.round(pfcfScore),
@@ -182,6 +228,8 @@ export function scoreStock(s: StockData): ScoreBreakdown {
     verdict,
     strengths:  strengths.slice(0, 4),
     weaknesses: weaknesses.slice(0, 3),
+    dividendScore,
+    dividendGrade,
   }
 }
 
