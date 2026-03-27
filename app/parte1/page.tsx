@@ -113,6 +113,10 @@ export default function Parte1() {
   const [sortBy, setSortBy]     = useState<SortKey>("composite")
   const [expanded, setExpanded] = useState<string | null>(null)
 
+  function handleKey(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && !loading) run()
+  }
+
   async function run() {
     setLoading(true)
     setRan(false)
@@ -157,7 +161,7 @@ export default function Parte1() {
       <div className="max-w-full mx-auto">
 
         {/* Nav */}
-        <div className="flex items-center gap-4 mb-8">
+        <div className="flex items-center gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold text-white">Parte 1 — Valoración</h1>
             <p className="text-gray-400 mt-1">Modelos de valoración combinados con score compuesto</p>
@@ -167,8 +171,41 @@ export default function Parte1() {
           </Link>
         </div>
 
+        {/* Resumen explicativo — visible hasta que se ejecute el análisis */}
+        {!ran && !loading && (
+          <div className="bg-gray-900 border border-blue-900 rounded-xl p-6 mb-6">
+            <h2 className="text-lg font-bold text-blue-300 mb-1">¿Qué hace esta página?</h2>
+            <p className="text-gray-300 text-sm leading-relaxed mb-4">
+              Analiza cada empresa del universo seleccionado usando <strong className="text-white">múltiples modelos de valoración simultáneamente</strong> y los condensa en un <strong className="text-white">score compuesto del 0 al 100</strong>. El objetivo es replicar, de forma automatizada, la lógica que usan los grandes fondos de inversión value: encontrar empresas que sean baratas <em>y</em> de calidad al mismo tiempo.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div className="bg-gray-800 rounded-lg p-3">
+                <div className="text-blue-400 font-semibold text-sm mb-1">Score Compuesto</div>
+                <p className="text-gray-400 text-xs leading-relaxed">55% valor + 45% calidad. La vista más equilibrada. Premia empresas baratas con buen negocio.</p>
+              </div>
+              <div className="bg-gray-800 rounded-lg p-3">
+                <div className="text-green-400 font-semibold text-sm mb-1">Score de Valor</div>
+                <p className="text-gray-400 text-xs leading-relaxed">Qué tan barata está la acción. Usa Graham Number, P/FCF, Earnings Yield y upside a analistas.</p>
+              </div>
+              <div className="bg-gray-800 rounded-lg p-3">
+                <div className="text-yellow-400 font-semibold text-sm mb-1">Score de Calidad</div>
+                <p className="text-gray-400 text-xs leading-relaxed">Qué tan bueno es el negocio. Usa ROE, ROA, margen operativo y nivel de deuda.</p>
+              </div>
+            </div>
+            <div className="border-t border-gray-800 pt-4">
+              <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Modelos incluidos</p>
+              <div className="flex flex-wrap gap-2">
+                {["Graham Number", "Peter Lynch (EPS×15)", "PEG Ratio", "Price/FCF", "EV/EBITDA", "Earnings Yield", "Target analistas"].map(m => (
+                  <span key={m} className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded border border-gray-700">{m}</span>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-blue-400 mt-4">Selecciona el universo y presiona <strong>Analizar</strong> o <strong>Enter</strong> para comenzar.</p>
+          </div>
+        )}
+
         {/* Controles */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 flex flex-wrap gap-6 items-end">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 flex flex-wrap gap-6 items-end" onKeyDown={handleKey}>
           <div>
             <label className="block text-xs text-gray-400 mb-1">Universo</label>
             <select value={universe}
@@ -205,7 +242,7 @@ export default function Parte1() {
           </div>
 
           <button onClick={run} disabled={loading}
-            className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-blue-400 text-white font-semibold px-5 py-2 rounded-lg transition-colors">
+            className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-blue-400 text-white font-semibold px-5 py-2 rounded-lg transition-colors self-end">
             {loading ? `Analizando... ${progress}%` : "Analizar"}
           </button>
         </div>
