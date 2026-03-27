@@ -54,16 +54,52 @@ function ModelCell({ value, good, label }: { value: string; good: boolean | null
 
 type SortKey = "composite" | "value" | "quality" | "graham" | "lynch" | "peg" | "pfcf" | "ey" | "upside"
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "composite", label: "Score compuesto" },
-  { key: "value",     label: "Score de valor" },
-  { key: "quality",   label: "Score de calidad" },
-  { key: "graham",    label: "Descuento vs Graham" },
-  { key: "lynch",     label: "Descuento vs Lynch" },
-  { key: "peg",       label: "PEG más bajo" },
-  { key: "pfcf",      label: "P/FCF más bajo" },
-  { key: "ey",        label: "Earnings Yield" },
-  { key: "upside",    label: "Upside analistas" },
+const SORT_OPTIONS: { key: SortKey; label: string; desc: string }[] = [
+  {
+    key: "composite",
+    label: "Score compuesto",
+    desc: "Combina todos los modelos en un solo número (55% valor + 45% calidad). Muestra las empresas que son baratas y tienen un negocio sólido al mismo tiempo. Es la vista más equilibrada.",
+  },
+  {
+    key: "value",
+    label: "Score de valor",
+    desc: "Mide únicamente qué tan barata está la acción sin importar la calidad del negocio. Combina Graham Number, P/FCF, upside a target de analistas y Earnings Yield. Una empresa puede estar primera aquí y tener un negocio mediocre.",
+  },
+  {
+    key: "quality",
+    label: "Score de calidad",
+    desc: "Mide qué tan bueno es el negocio sin importar el precio. Combina ROE, ROA, margen operativo y nivel de deuda. Una empresa puede estar primera aquí y estar cara.",
+  },
+  {
+    key: "graham",
+    label: "Descuento vs Graham",
+    desc: "Ordena por el % que el precio actual está por debajo del Graham Number (√(22.5 × EPS × Book Value)). Positivo = barato. No aplica para empresas con EPS o book value negativo.",
+  },
+  {
+    key: "lynch",
+    label: "Descuento vs Lynch",
+    desc: "Ordena por el % que el precio está por debajo de EPS × 15. Lynch argumentaba que una empresa promedio merece 15 veces sus ganancias. Similar a ordenar por P/E inverso con referencia fija de 15x.",
+  },
+  {
+    key: "peg",
+    label: "PEG más bajo",
+    desc: "PEG = P/E ÷ crecimiento de EPS. Combina valoración y crecimiento en un número. PEG < 1 barata, PEG < 0.5 muy barata. El filtro favorito de Peter Lynch para empresas de crecimiento a buen precio.",
+  },
+  {
+    key: "pfcf",
+    label: "P/FCF más bajo",
+    desc: "Precio dividido entre Free Cash Flow por acción. El FCF es el dinero real que genera el negocio y es difícil de manipular. P/FCF < 10 muy barato, < 15 barato, > 25 caro.",
+  },
+  {
+    key: "ey",
+    label: "Earnings Yield",
+    desc: "EBITDA ÷ Enterprise Value expresado en %. Es el rendimiento que genera el negocio sobre su valor total. Comparar contra el bono del tesoro a 10Y (~4.5%): si el Earnings Yield es menor, el bono rinde más.",
+  },
+  {
+    key: "upside",
+    label: "Upside analistas",
+    desc: "% de diferencia entre el precio actual y el precio objetivo promedio de los analistas de Wall Street. Referencia útil pero con cautela: los analistas tienden a ser optimistas y se equivocan frecuentemente.",
+  },
 ]
 
 export default function Parte1() {
@@ -155,14 +191,17 @@ export default function Parte1() {
             </div>
           )}
 
-          <div>
+          <div className="flex-1 min-w-[260px]">
             <label className="block text-xs text-gray-400 mb-1">Ordenar por</label>
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value as SortKey)}
-              className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white">
+              className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white w-full max-w-xs">
               {SORT_OPTIONS.map(o => (
                 <option key={o.key} value={o.key}>{o.label}</option>
               ))}
             </select>
+            <p className="text-xs text-gray-500 mt-2 max-w-sm leading-relaxed">
+              {SORT_OPTIONS.find(o => o.key === sortBy)?.desc}
+            </p>
           </div>
 
           <button onClick={run} disabled={loading}
