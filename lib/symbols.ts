@@ -1,4 +1,4 @@
-// Dow Jones Industrial Average — 30 componentes (ETF: DIA)
+// Dow Jones Industrial Average — 30 componentes
 export const DJIA_SYMBOLS = [
   "AAPL","AMGN","AMZN","AXP","BA","CAT","CRM","CSCO","CVX","DIS",
   "DOW","GS","HD","HON","IBM","JNJ","JPM","KO","MCD","MRK",
@@ -26,4 +26,25 @@ export const SP500_SYMBOLS = [
   "EXC","ED","WEC","KEYS","XEL","AWK","MTD","ROK","FAST","BRO",
   "IR","VRSK","GPN","EFX","CTSH","CINF","CDW","TROW","IQV","WAT",
   "BAX","K","RMD","LHX","ANSS","STE","DLTR","WY","DTE","CHD",
+]
+
+// Nasdaq 100 — empresas no financieras del Nasdaq
+export const NASDAQ100_SYMBOLS = [
+  "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","AVGO","TSLA","COST",
+  "NFLX","AMD","ASML","QCOM","INTU","CSCO","TXN","LIN","ISRG","AMAT",
+  "REGN","VRTX","AMGN","MU","ADI","KLAC","LRCX","PANW","MRVL","CDNS",
+  "SNPS","CRWD","FTNT","MCHP","ADSK","PCAR","CTAS","PAYX","FAST","ROST",
+  "VRSK","IDXX","DXCM","BIIB","GILD","MNST","KDP","PEP","DLTR","EBAY",
+  "SBUX","MDLZ","EA","TTWO","NXPI","ANSS","SWKS","CTSH","GEHC","ON",
+  "BKR","ZS","DDOG","ILMN","MRNA","TEAM","WDAY","OKTA","ABNB","DASH",
+  "COIN","MELI","PDD","BIDU","JD","NTES","WBD","PARA","SIRI","LCID",
+]
+
+// Russell 1000 — adicionales al S&P 500 (small/mid cap de calidad)
+export const RUSSELL_SYMBOLS = [
+  "AXON","HUBS","APP","ENPH","MPWR","ENTG","PODD","TRMB","ALGN","LULU",
+  "RMD","WSM","DECK","DOCS","EXAS","CSGP","VRT","CELH","DUOL","NTRA",
+  "MASI","ICLR","TECH","BRKR","WST","NVCR","EXEL","INSP","PRCT","STVN",
+  "MLAB","QDEL","NEOG","RXRX","BEAM","ITCI","TGTX","ACAD","SEER","LEGN",
+  "TMDX","ALLO","KROS","IMVT","ARVN","KYMR","VRTX","FOLD","PTGX","RCUS",
 ]

@@ -2,120 +2,95 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { DJIA_SYMBOLS, SP500_SYMBOLS } from "@/lib/symbols"
+import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS } from "@/lib/symbols"
+import { scoreStock } from "@/lib/scoring"
 import type { StockData } from "@/lib/yahoo"
+import type { ScoreBreakdown } from "@/lib/scoring"
 
-async function fetchStock(symbol: string): Promise<StockData | null> {
+type Scored = StockData & { score: ScoreBreakdown }
+
+async function fetchStock(symbol: string): Promise<Scored | null> {
   try {
     const res = await fetch(`/api/stock/${symbol}`)
     if (!res.ok) return null
-    return await res.json()
+    const data: StockData = await res.json()
+    return { ...data, score: scoreStock(data) }
   } catch {
     return null
   }
 }
 
-function fmt(v: number, dec = 1) { return v !== 0 ? v.toFixed(dec) : "—" }
-function pct(v: number, dec = 1) { return v !== 0 ? `${v >= 0 ? "+" : ""}${v.toFixed(dec)}%` : "—" }
+function pct(v: number, dec = 1) {
+  if (v === 0) return "—"
+  return `${v >= 0 ? "+" : ""}${v.toFixed(dec)}%`
+}
 function usd(v: number) { return v > 0 ? `$${v.toFixed(2)}` : "—" }
+function fmt(v: number, dec = 1) { return v !== 0 ? v.toFixed(dec) : "—" }
 
-function ScoreBadge({ value, label }: { value: number; label?: string }) {
+function GradeBadge({ grade }: { grade: string }) {
   const color =
-    value >= 70 ? "bg-green-900 text-green-300 border-green-700" :
-    value >= 45 ? "bg-yellow-900 text-yellow-300 border-yellow-700" :
-    "bg-red-900 text-red-300 border-red-700"
+    grade === "A+" ? "bg-emerald-500 text-white" :
+    grade === "A"  ? "bg-green-600 text-white" :
+    grade === "B"  ? "bg-blue-600 text-white" :
+    grade === "C"  ? "bg-yellow-600 text-white" :
+    grade === "D"  ? "bg-orange-600 text-white" :
+    "bg-red-700 text-white"
   return (
-    <div className={`inline-flex flex-col items-center rounded-lg border px-2 py-1 ${color}`}>
-      <span className="text-lg font-black leading-none">{value}</span>
-      {label && <span className="text-[10px] opacity-70 mt-0.5">{label}</span>}
+    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-black shrink-0 ${color}`}>
+      {grade}
     </div>
   )
 }
 
-function Bar({ value, max = 100 }: { value: number; max?: number }) {
-  const pct = Math.max(0, Math.min(100, (value / max) * 100))
-  const color = pct >= 70 ? "bg-green-500" : pct >= 45 ? "bg-yellow-500" : "bg-red-500"
-  return (
-    <div className="w-full bg-gray-800 rounded-full h-1.5 mt-1">
-      <div className={`h-1.5 rounded-full ${color}`} style={{ width: `${pct}%` }} />
-    </div>
-  )
-}
-
-function ModelCell({ value, good, label }: { value: string; good: boolean | null; label?: string }) {
-  const color = good === null ? "text-gray-300" : good ? "text-green-400" : "text-red-400"
+function PillarBar({ label, value, weight }: { label: string; value: number; weight: string }) {
+  const color = value >= 70 ? "bg-green-500" : value >= 45 ? "bg-yellow-500" : "bg-red-500"
   return (
     <div>
-      <span className={`font-mono text-sm ${color}`}>{value}</span>
-      {label && <div className="text-[10px] text-gray-600">{label}</div>}
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-gray-400">{label} <span className="text-gray-600">({weight})</span></span>
+        <span className={`font-bold ${value >= 70 ? "text-green-400" : value >= 45 ? "text-yellow-400" : "text-red-400"}`}>{value}</span>
+      </div>
+      <div className="w-full bg-gray-800 rounded-full h-2">
+        <div className={`h-2 rounded-full transition-all ${color}`} style={{ width: `${value}%` }} />
+      </div>
     </div>
   )
 }
 
-type SortKey = "composite" | "value" | "quality" | "graham" | "lynch" | "peg" | "pfcf" | "ey" | "upside"
+function Metric({ label, value, good, note }: { label: string; value: string; good: boolean | null; note?: string }) {
+  const color = good === null ? "text-gray-300" : good ? "text-green-400" : "text-red-400"
+  return (
+    <div className="flex justify-between items-start gap-2 py-1.5 border-b border-gray-800/60 last:border-0">
+      <div>
+        <div className="text-xs text-gray-500">{label}</div>
+        {note && <div className="text-[10px] text-gray-700 mt-0.5">{note}</div>}
+      </div>
+      <span className={`font-mono text-sm font-semibold ${color}`}>{value}</span>
+    </div>
+  )
+}
 
-const SORT_OPTIONS: { key: SortKey; label: string; desc: string }[] = [
-  {
-    key: "composite",
-    label: "Score compuesto",
-    desc: "Combina todos los modelos en un solo número (55% valor + 45% calidad). Muestra las empresas que son baratas y tienen un negocio sólido al mismo tiempo. Es la vista más equilibrada.",
-  },
-  {
-    key: "value",
-    label: "Score de valor",
-    desc: "Mide únicamente qué tan barata está la acción sin importar la calidad del negocio. Combina Graham Number, P/FCF, upside a target de analistas y Earnings Yield. Una empresa puede estar primera aquí y tener un negocio mediocre.",
-  },
-  {
-    key: "quality",
-    label: "Score de calidad",
-    desc: "Mide qué tan bueno es el negocio sin importar el precio. Combina ROE, ROA, margen operativo y nivel de deuda. Una empresa puede estar primera aquí y estar cara.",
-  },
-  {
-    key: "graham",
-    label: "Descuento vs Graham",
-    desc: "Ordena por el % que el precio actual está por debajo del Graham Number (√(22.5 × EPS × Book Value)). Positivo = barato. No aplica para empresas con EPS o book value negativo.",
-  },
-  {
-    key: "lynch",
-    label: "Descuento vs Lynch",
-    desc: "Ordena por el % que el precio está por debajo de EPS × 15. Lynch argumentaba que una empresa promedio merece 15 veces sus ganancias. Similar a ordenar por P/E inverso con referencia fija de 15x.",
-  },
-  {
-    key: "peg",
-    label: "PEG más bajo",
-    desc: "PEG = P/E ÷ crecimiento de EPS. Combina valoración y crecimiento en un número. PEG < 1 barata, PEG < 0.5 muy barata. El filtro favorito de Peter Lynch para empresas de crecimiento a buen precio.",
-  },
-  {
-    key: "pfcf",
-    label: "P/FCF más bajo",
-    desc: "Precio dividido entre Free Cash Flow por acción. El FCF es el dinero real que genera el negocio y es difícil de manipular. P/FCF < 10 muy barato, < 15 barato, > 25 caro.",
-  },
-  {
-    key: "ey",
-    label: "Earnings Yield",
-    desc: "EBITDA ÷ Enterprise Value expresado en %. Es el rendimiento que genera el negocio sobre su valor total. Comparar contra el bono del tesoro a 10Y (~4.5%): si el Earnings Yield es menor, el bono rinde más.",
-  },
-  {
-    key: "upside",
-    label: "Upside analistas",
-    desc: "% de diferencia entre el precio actual y el precio objetivo promedio de los analistas de Wall Street. Referencia útil pero con cautela: los analistas tienden a ser optimistas y se equivocan frecuentemente.",
-  },
+type Universe = "dia" | "sp500" | "nasdaq" | "russell"
+const UNIVERSES: { key: Universe; label: string; symbols: string[] }[] = [
+  { key: "dia",     label: "Dow Jones 30",  symbols: DJIA_SYMBOLS },
+  { key: "sp500",   label: "S&P 500",       symbols: SP500_SYMBOLS },
+  { key: "nasdaq",  label: "Nasdaq 100",    symbols: NASDAQ100_SYMBOLS },
+  { key: "russell", label: "Russell 1000",  symbols: RUSSELL_SYMBOLS },
 ]
 
 export default function Parte1() {
-  const [stocks, setStocks]     = useState<StockData[]>([])
+  const [stocks, setStocks]     = useState<Scored[]>([])
   const [loading, setLoading]   = useState(false)
   const [ran, setRan]           = useState(false)
   const [progress, setProgress] = useState(0)
   const [fetched, setFetched]   = useState(0)
-  const [universe, setUniverse] = useState<"dia" | "sp500">("dia")
+  const [universe, setUniverse] = useState<Universe>("dia")
   const [limit, setLimit]       = useState(50)
-  const [sortBy, setSortBy]     = useState<SortKey>("composite")
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [minGrade, setMinGrade] = useState<string>("F")
 
-  function handleKey(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !loading) run()
-  }
+  const universeSymbols = UNIVERSES.find(u => u.key === universe)?.symbols ?? DJIA_SYMBOLS
+  const symbols = universe === "sp500" ? universeSymbols.slice(0, limit) : universeSymbols
 
   async function run() {
     setLoading(true)
@@ -124,102 +99,105 @@ export default function Parte1() {
     setProgress(0)
     setFetched(0)
 
-    const symbols = universe === "dia" ? DJIA_SYMBOLS : SP500_SYMBOLS.slice(0, limit)
-    const results: StockData[] = []
+    const results: Scored[] = []
     let done = 0
 
     for (let i = 0; i < symbols.length; i += 5) {
       const batch = await Promise.all(symbols.slice(i, i + 5).map(fetchStock))
-      batch.forEach((s) => { if (s) results.push(s) })
+      batch.forEach(s => { if (s) results.push(s) })
       done += 5
       setProgress(Math.round((Math.min(done, symbols.length) / symbols.length) * 100))
       setFetched(results.length)
     }
 
-    results.sort((a, b) => {
-      switch (sortBy) {
-        case "composite": return b.compositeScore - a.compositeScore
-        case "value":     return b.valueScore - a.valueScore
-        case "quality":   return b.qualityScore - a.qualityScore
-        case "graham":    return b.discountToGraham - a.discountToGraham
-        case "lynch":     return b.discountToLynch - a.discountToLynch
-        case "peg":       return (a.peg > 0 ? a.peg : 999) - (b.peg > 0 ? b.peg : 999)
-        case "pfcf":      return (a.pFcf > 0 ? a.pFcf : 999) - (b.pFcf > 0 ? b.pFcf : 999)
-        case "ey":        return b.earningsYield - a.earningsYield
-        case "upside":    return b.upsideToTarget - a.upsideToTarget
-        default:          return 0
-      }
-    })
-
+    const GRADE_ORDER = ["F", "D", "C", "B", "A", "A+"]
+    results.sort((a, b) => b.score.finalScore - a.score.finalScore)
     setStocks(results)
     setLoading(false)
     setRan(true)
   }
 
+  function handleKey(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && !loading) run()
+  }
+
+  const GRADE_ORDER = ["F", "D", "C", "B", "A", "A+"]
+  const filtered = stocks.filter(s =>
+    GRADE_ORDER.indexOf(s.score.grade) >= GRADE_ORDER.indexOf(minGrade)
+  )
+
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
-      <div className="max-w-full mx-auto">
+      <div className="max-w-5xl mx-auto">
 
-        {/* Nav */}
-        <div className="flex items-center gap-4 mb-6">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-white">Parte 1 — Valoración</h1>
-            <p className="text-gray-400 mt-1">Modelos de valoración combinados con score compuesto</p>
+            <h1 className="text-3xl font-bold text-white">Valoración de Empresas</h1>
+            <p className="text-gray-400 mt-1">Modelo de calidad primero — como lo hacen los grandes fondos</p>
           </div>
-          <Link href="/" className="ml-auto text-sm text-gray-500 hover:text-gray-300 transition-colors">
-            ← Screener básico
+          <Link href="/" className="text-sm text-gray-500 hover:text-gray-300 transition-colors shrink-0">
+            ← Screener
           </Link>
         </div>
 
-        {/* Resumen explicativo — visible hasta que se ejecute el análisis */}
+        {/* Panel explicativo */}
         {!ran && !loading && (
-          <div className="bg-gray-900 border border-blue-900 rounded-xl p-6 mb-6">
-            <h2 className="text-lg font-bold text-blue-300 mb-1">¿Qué hace esta página?</h2>
-            <p className="text-gray-300 text-sm leading-relaxed mb-4">
-              Analiza cada empresa del universo seleccionado usando <strong className="text-white">múltiples modelos de valoración simultáneamente</strong> y los condensa en un <strong className="text-white">score compuesto del 0 al 100</strong>. El objetivo es replicar, de forma automatizada, la lógica que usan los grandes fondos de inversión value: encontrar empresas que sean baratas <em>y</em> de calidad al mismo tiempo.
+          <div className="bg-gray-900 border border-blue-900/60 rounded-xl p-6 mb-6">
+            <h2 className="text-base font-bold text-blue-300 mb-3">¿Cómo funciona este modelo?</h2>
+            <p className="text-gray-300 text-sm leading-relaxed mb-5">
+              Los grandes fondos de inversión — Berkshire, Sequoia, Fundsmith — no buscan acciones baratas. Buscan <strong className="text-white">negocios extraordinarios</strong> y solo se preocupan por el precio después de confirmar la calidad. Este modelo replica esa lógica: <strong className="text-white">80% calidad del negocio, 20% precio</strong>.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-              <div className="bg-gray-800 rounded-lg p-3">
-                <div className="text-blue-400 font-semibold text-sm mb-1">Score Compuesto</div>
-                <p className="text-gray-400 text-xs leading-relaxed">55% valor + 45% calidad. La vista más equilibrada. Premia empresas baratas con buen negocio.</p>
-              </div>
-              <div className="bg-gray-800 rounded-lg p-3">
-                <div className="text-green-400 font-semibold text-sm mb-1">Score de Valor</div>
-                <p className="text-gray-400 text-xs leading-relaxed">Qué tan barata está la acción. Usa Graham Number, P/FCF, Earnings Yield y upside a analistas.</p>
-              </div>
-              <div className="bg-gray-800 rounded-lg p-3">
-                <div className="text-yellow-400 font-semibold text-sm mb-1">Score de Calidad</div>
-                <p className="text-gray-400 text-xs leading-relaxed">Qué tan bueno es el negocio. Usa ROE, ROA, margen operativo y nivel de deuda.</p>
-              </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+              {[
+                { pct: "30%", color: "border-purple-700 bg-purple-950/50", title: "Eficiencia del Capital", desc: "ROE, ROA, FCF Margin — ¿el negocio crea valor real?" },
+                { pct: "30%", color: "border-blue-700 bg-blue-950/50",   title: "Ventaja Competitiva", desc: "Márgenes bruto, operativo, neto — ¿tiene moat?" },
+                { pct: "20%", color: "border-green-700 bg-green-950/50", title: "Solidez Financiera", desc: "Nivel de deuda — ¿el balance es resistente?" },
+                { pct: "20%", color: "border-yellow-700 bg-yellow-950/50", title: "Precio", desc: "P/FCF, EV/EBITDA, upside — ¿está a buen precio?" },
+              ].map(p => (
+                <div key={p.title} className={`border rounded-lg p-3 ${p.color}`}>
+                  <div className="text-xs font-bold text-gray-300 mb-0.5">{p.pct} — {p.title}</div>
+                  <div className="text-xs text-gray-500 leading-relaxed">{p.desc}</div>
+                </div>
+              ))}
             </div>
-            <div className="border-t border-gray-800 pt-4">
-              <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Modelos incluidos</p>
-              <div className="flex flex-wrap gap-2">
-                {["Graham Number", "Peter Lynch (EPS×15)", "PEG Ratio", "Price/FCF", "EV/EBITDA", "Earnings Yield", "Target analistas"].map(m => (
-                  <span key={m} className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded border border-gray-700">{m}</span>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-xs text-gray-600">Calificaciones:</span>
+              {[
+                { g: "A+", c: "bg-emerald-500", d: "Negocio excepcional a precio atractivo" },
+                { g: "A",  c: "bg-green-600",   d: "Alta calidad, precio razonable" },
+                { g: "B",  c: "bg-blue-600",     d: "Buen negocio, oportunidad condicional" },
+                { g: "C",  c: "bg-yellow-600",   d: "Promedio — no cumple el estándar" },
+                { g: "D",  c: "bg-orange-600",   d: "Debilidades estructurales" },
+                { g: "F",  c: "bg-red-700",      d: "Evitar" },
+              ].map(x => (
+                <span key={x.g} title={x.d}
+                  className={`${x.c} text-white text-xs font-bold px-2 py-0.5 rounded cursor-help`}>
+                  {x.g}
+                </span>
+              ))}
             </div>
-            <p className="text-xs text-blue-400 mt-4">Selecciona el universo y presiona <strong>Analizar</strong> o <strong>Enter</strong> para comenzar.</p>
+            <p className="text-xs text-blue-400 mt-4">Selecciona el universo y presiona <strong>Analizar</strong> o <strong>Enter</strong>.</p>
           </div>
         )}
 
         {/* Controles */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 flex flex-wrap gap-6 items-end" onKeyDown={handleKey}>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 flex flex-wrap gap-5 items-end" onKeyDown={handleKey}>
           <div>
             <label className="block text-xs text-gray-400 mb-1">Universo</label>
             <select value={universe}
-              onChange={(e) => { setUniverse(e.target.value as "dia" | "sp500"); setStocks([]); setRan(false) }}
+              onChange={e => { setUniverse(e.target.value as Universe); setStocks([]); setRan(false) }}
               className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white">
-              <option value="dia">Dow Jones 30</option>
-              <option value="sp500">S&P 500</option>
+              {UNIVERSES.map(u => (
+                <option key={u.key} value={u.key}>{u.label} ({u.symbols.length})</option>
+              ))}
             </select>
           </div>
 
           {universe === "sp500" && (
             <div>
               <label className="block text-xs text-gray-400 mb-1">Acciones</label>
-              <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}
+              <select value={limit} onChange={e => setLimit(Number(e.target.value))}
                 className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white">
                 <option value={50}>50</option>
                 <option value={100}>100</option>
@@ -228,259 +206,200 @@ export default function Parte1() {
             </div>
           )}
 
-          <div className="flex-1 min-w-[260px]">
-            <label className="block text-xs text-gray-400 mb-1">Ordenar por</label>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as SortKey)}
-              className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white w-full max-w-xs">
-              {SORT_OPTIONS.map(o => (
-                <option key={o.key} value={o.key}>{o.label}</option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 mt-2 max-w-sm leading-relaxed">
-              {SORT_OPTIONS.find(o => o.key === sortBy)?.desc}
-            </p>
-          </div>
+          {ran && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Calificación mínima</label>
+              <select value={minGrade} onChange={e => setMinGrade(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white">
+                {["F","D","C","B","A","A+"].map(g => <option key={g} value={g}>{g} o mejor</option>)}
+              </select>
+            </div>
+          )}
 
           <button onClick={run} disabled={loading}
-            className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-blue-400 text-white font-semibold px-5 py-2 rounded-lg transition-colors self-end">
+            className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-blue-400 text-white font-semibold px-6 py-2 rounded-lg transition-colors">
             {loading ? `Analizando... ${progress}%` : "Analizar"}
           </button>
-        </div>
 
-        {loading && fetched > 0 && (
-          <p className="text-sm text-gray-500 mb-4">{fetched} acciones procesadas...</p>
-        )}
+          {loading && fetched > 0 && (
+            <span className="text-sm text-gray-500 self-center">{fetched} empresas procesadas</span>
+          )}
+        </div>
 
         {ran && !loading && stocks.length === 0 && (
           <div className="text-center py-20 text-red-400">No se pudo obtener datos. Intenta de nuevo.</div>
         )}
 
         {/* Resultados */}
-        {stocks.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm text-gray-500 mb-4">{stocks.length} empresas analizadas</p>
+        {filtered.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">
+              {filtered.length} empresas{filtered.length !== stocks.length ? ` de ${stocks.length}` : ""} — ordenadas por score de calidad
+            </p>
 
-            {stocks.map((s) => {
+            {filtered.map(s => {
               const open = expanded === s.symbol
+              const sc = s.score
               return (
-                <div key={s.symbol}
-                  className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <div key={s.symbol} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
 
                   {/* Fila principal */}
                   <button
                     onClick={() => setExpanded(open ? null : s.symbol)}
-                    className="w-full text-left px-5 py-4 hover:bg-gray-800/50 transition-colors">
+                    className="w-full text-left px-5 py-4 hover:bg-gray-800/40 transition-colors">
                     <div className="flex items-center gap-4 flex-wrap">
 
-                      {/* Score compuesto */}
-                      <ScoreBadge value={s.compositeScore} />
+                      <GradeBadge grade={sc.grade} />
 
                       {/* Empresa */}
-                      <div className="min-w-[140px]">
+                      <div className="min-w-[150px]">
                         <div className="font-bold text-white text-base">{s.symbol}</div>
-                        <div className="text-xs text-gray-400 truncate max-w-[160px]">{s.company}</div>
+                        <div className="text-xs text-gray-400 truncate max-w-[180px]">{s.company}</div>
                         <div className="text-xs text-gray-600">{s.sector}</div>
                       </div>
 
-                      {/* Precio */}
-                      <div className="text-right min-w-[80px]">
+                      {/* Score final */}
+                      <div className="text-center min-w-[52px]">
+                        <div className="text-2xl font-black text-white">{sc.finalScore}</div>
+                        <div className="text-[10px] text-gray-600">/ 100</div>
+                      </div>
+
+                      {/* Pilares */}
+                      <div className="flex gap-3 flex-1 min-w-[280px]">
+                        {[
+                          { label: "Capital", value: sc.capitalScore, color: "text-purple-400" },
+                          { label: "Moat",    value: sc.moatScore,    color: "text-blue-400" },
+                          { label: "Salud",   value: sc.healthScore,  color: "text-green-400" },
+                          { label: "Precio",  value: sc.priceScore,   color: "text-yellow-400" },
+                        ].map(p => (
+                          <div key={p.label} className="text-center min-w-[52px]">
+                            <div className={`text-base font-bold ${p.color}`}>{p.value}</div>
+                            <div className="text-[10px] text-gray-600">{p.label}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Precio y veredicto */}
+                      <div className="ml-auto text-right">
                         <div className="font-mono text-white">${s.currentPrice.toFixed(2)}</div>
-                        <div className={`text-xs font-mono ${s.dropFrom52w <= -20 ? "text-green-400" : "text-gray-500"}`}>
+                        <div className={`text-xs ${s.dropFrom52w <= -20 ? "text-green-400" : "text-gray-600"}`}>
                           {s.dropFrom52w.toFixed(1)}% vs 52w
                         </div>
                       </div>
 
-                      {/* Scores individuales */}
-                      <div className="flex gap-3 flex-wrap">
-                        <div className="text-center">
-                          <div className="text-xs text-gray-500 mb-0.5">Valor</div>
-                          <div className={`text-sm font-bold ${s.valueScore >= 60 ? "text-green-400" : s.valueScore >= 35 ? "text-yellow-400" : "text-red-400"}`}>
-                            {s.valueScore}
-                          </div>
-                          <Bar value={s.valueScore} />
-                        </div>
-                        <div className="text-center">
-                          <div className="text-xs text-gray-500 mb-0.5">Calidad</div>
-                          <div className={`text-sm font-bold ${s.qualityScore >= 60 ? "text-green-400" : s.qualityScore >= 35 ? "text-yellow-400" : "text-red-400"}`}>
-                            {s.qualityScore}
-                          </div>
-                          <Bar value={s.qualityScore} />
-                        </div>
-                      </div>
-
-                      {/* Modelos clave en resumen */}
-                      <div className="flex gap-4 flex-wrap ml-auto text-right">
-                        <div>
-                          <div className="text-xs text-gray-500">Graham</div>
-                          <div className={`text-sm font-mono font-bold ${s.discountToGraham > 0 ? "text-green-400" : "text-red-400"}`}>
-                            {s.grahamNumber > 0 ? pct(s.discountToGraham) : "—"}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">PEG</div>
-                          <div className={`text-sm font-mono font-bold ${s.peg > 0 && s.peg < 1 ? "text-green-400" : s.peg < 2 ? "text-yellow-400" : "text-red-400"}`}>
-                            {s.peg > 0 ? s.peg.toFixed(2) : "—"}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">P/FCF</div>
-                          <div className={`text-sm font-mono font-bold ${s.pFcf > 0 && s.pFcf < 15 ? "text-green-400" : s.pFcf < 25 ? "text-yellow-400" : "text-red-400"}`}>
-                            {s.pFcf > 0 ? s.pFcf.toFixed(1) : "—"}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">Upside</div>
-                          <div className={`text-sm font-mono font-bold ${s.upsideToTarget >= 20 ? "text-green-400" : s.upsideToTarget >= 0 ? "text-yellow-400" : "text-red-400"}`}>
-                            {s.analystTarget > 0 ? pct(s.upsideToTarget) : "—"}
-                          </div>
-                        </div>
-                      </div>
-
-                      <span className="text-gray-600 text-xs ml-2">{open ? "▲" : "▼"}</span>
+                      <span className="text-gray-700 text-xs">{open ? "▲" : "▼"}</span>
                     </div>
+
+                    {/* Veredicto */}
+                    <p className="text-xs text-gray-500 mt-2 ml-16 leading-relaxed">{sc.verdict}</p>
                   </button>
 
                   {/* Detalle expandido */}
                   {open && (
-                    <div className="border-t border-gray-800 px-5 py-5 grid grid-cols-2 md:grid-cols-4 gap-6 bg-gray-950">
+                    <div className="border-t border-gray-800 bg-gray-950 px-5 py-5">
 
-                      {/* Modelos de valor */}
-                      <div>
-                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Modelos de Valor</h3>
-                        <div className="space-y-2.5">
-                          <div>
-                            <div className="text-xs text-gray-500">Graham Number</div>
-                            <ModelCell value={usd(s.grahamNumber)} good={s.grahamNumber > 0 ? s.discountToGraham > 0 : null}
-                              label={s.grahamNumber > 0 ? `${pct(s.discountToGraham)} vs precio` : "EPS o BV negativo"} />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Peter Lynch (EPS×15)</div>
-                            <ModelCell value={usd(s.lynchValue)} good={s.lynchValue > 0 ? s.discountToLynch > 0 : null}
-                              label={s.lynchValue > 0 ? `${pct(s.discountToLynch)} vs precio` : "EPS negativo"} />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Target analistas</div>
-                            <ModelCell value={usd(s.analystTarget)} good={s.upsideToTarget > 10}
-                              label={s.analystTarget > 0 ? `${pct(s.upsideToTarget)} upside · ${s.analystCount} analistas` : "Sin cobertura"} />
-                          </div>
+                      {/* Fortalezas y debilidades */}
+                      {(sc.strengths.length > 0 || sc.weaknesses.length > 0) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                          {sc.strengths.length > 0 && (
+                            <div className="bg-green-950/30 border border-green-900/40 rounded-lg p-3">
+                              <div className="text-xs font-semibold text-green-400 uppercase tracking-wider mb-2">Fortalezas</div>
+                              <ul className="space-y-1">
+                                {sc.strengths.map((s, i) => (
+                                  <li key={i} className="text-xs text-gray-300 flex gap-2">
+                                    <span className="text-green-500 shrink-0">✓</span>{s}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {sc.weaknesses.length > 0 && (
+                            <div className="bg-red-950/30 border border-red-900/40 rounded-lg p-3">
+                              <div className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-2">Debilidades</div>
+                              <ul className="space-y-1">
+                                {sc.weaknesses.map((w, i) => (
+                                  <li key={i} className="text-xs text-gray-300 flex gap-2">
+                                    <span className="text-red-500 shrink-0">✗</span>{w}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Barras de pilares */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div className="space-y-3">
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desglose del Score</div>
+                          <PillarBar label="Eficiencia del Capital" value={sc.capitalScore} weight="30%" />
+                          <PillarBar label="Ventaja Competitiva (Moat)" value={sc.moatScore} weight="30%" />
+                          <PillarBar label="Solidez Financiera" value={sc.healthScore} weight="20%" />
+                          <PillarBar label="Precio" value={sc.priceScore} weight="20%" />
+                        </div>
+
+                        {/* Métricas clave */}
+                        <div>
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Métricas clave</div>
+                          <Metric label="ROE" value={pct(s.roe * 100)}
+                            good={s.roe >= 0.20} note="> 20% excelente" />
+                          <Metric label="ROA" value={pct(s.roa * 100)}
+                            good={s.roa >= 0.10} note="> 10% muy bueno" />
+                          <Metric label="FCF Margin" value={pct(s.fcfMargin * 100)}
+                            good={s.fcfMargin >= 0.15} note="> 15% excelente" />
+                          <Metric label="Margen Bruto" value={pct(s.grossMargin * 100)}
+                            good={s.grossMargin >= 0.40} note="> 40% moat visible" />
+                          <Metric label="Margen Operativo" value={pct(s.operatingMargin * 100)}
+                            good={s.operatingMargin >= 0.20} note="> 20% muy bueno" />
+                          <Metric label="Margen Neto" value={pct(s.netMargin * 100)}
+                            good={s.netMargin >= 0.10} />
+                          <Metric label="Deuda / Patrimonio" value={s.debtToEquity > 0 ? `${(s.debtToEquity / 100).toFixed(2)}x` : "—"}
+                            good={s.debtToEquity > 0 ? s.debtToEquity < 100 : null} note="< 1.0x conservador" />
                         </div>
                       </div>
 
-                      {/* Ratios de valoración */}
-                      <div>
-                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Ratios</h3>
-                        <div className="space-y-2.5">
-                          <div>
-                            <div className="text-xs text-gray-500">PEG Ratio</div>
-                            <ModelCell value={s.peg > 0 ? s.peg.toFixed(2) : "—"}
-                              good={s.peg > 0 ? s.peg < 1 : null}
-                              label="< 1 barato · < 0.5 muy barato" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Price / FCF</div>
-                            <ModelCell value={s.pFcf > 0 ? s.pFcf.toFixed(1) : "—"}
-                              good={s.pFcf > 0 ? s.pFcf < 15 : null}
-                              label="< 15 barato · < 10 muy barato" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">EV/EBITDA</div>
-                            <ModelCell value={s.evToEbitda > 0 ? s.evToEbitda.toFixed(1) : "—"}
-                              good={s.evToEbitda > 0 ? s.evToEbitda < 12 : null}
-                              label="< 12 atractivo · < 8 muy barato" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Earnings Yield</div>
-                            <ModelCell value={s.earningsYield > 0 ? `${s.earningsYield.toFixed(1)}%` : "—"}
-                              good={s.earningsYield > 4.5}
-                              label="Comparar vs bono 10Y (~4.5%)" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">P/E · Forward P/E · P/B</div>
-                            <span className="font-mono text-gray-300 text-sm">
-                              {fmt(s.pe)} · {fmt(s.forwardPe)} · {fmt(s.pb)}
-                            </span>
-                          </div>
+                      {/* Valoración y precio */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-gray-800">
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1.5 font-semibold">Ratios de precio</div>
+                          <Metric label="P/FCF" value={s.pFcf > 0 ? `${s.pFcf.toFixed(1)}x` : "—"}
+                            good={s.pFcf > 0 ? s.pFcf < 20 : null} />
+                          <Metric label="EV/EBITDA" value={s.evToEbitda > 0 ? `${s.evToEbitda.toFixed(1)}x` : "—"}
+                            good={s.evToEbitda > 0 ? s.evToEbitda < 15 : null} />
+                          <Metric label="P/E" value={s.pe > 0 ? `${s.pe.toFixed(1)}x` : "—"} good={null} />
+                          <Metric label="P/B" value={s.pb > 0 ? `${s.pb.toFixed(1)}x` : "—"} good={null} />
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1.5 font-semibold">Analistas</div>
+                          <Metric label="Target" value={usd(s.analystTarget)} good={null} />
+                          <Metric label="Upside" value={pct(s.upsideToTarget)}
+                            good={s.upsideToTarget >= 15} />
+                          <Metric label="# Analistas" value={s.analystCount > 0 ? String(s.analystCount) : "—"} good={null} />
+                          <Metric label="PEG" value={s.peg > 0 ? s.peg.toFixed(2) : "—"}
+                            good={s.peg > 0 ? s.peg < 1.5 : null} />
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1.5 font-semibold">Crecimiento</div>
+                          <Metric label="EPS Growth" value={pct(s.earningsGrowth * 100)}
+                            good={s.earningsGrowth >= 0.08} />
+                          <Metric label="Revenue Growth" value={pct(s.revenueGrowth * 100)}
+                            good={s.revenueGrowth >= 0.05} />
+                          <Metric label="FCF" value={s.freeCashflow > 1e9
+                            ? `$${(s.freeCashflow / 1e9).toFixed(1)}B`
+                            : s.freeCashflow > 0 ? `$${(s.freeCashflow / 1e6).toFixed(0)}M` : "—"} good={null} />
+                          <Metric label="Dividend Yield" value={s.dividendYield > 0 ? pct(s.dividendYield * 100) : "No paga"} good={null} />
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1.5 font-semibold">Precio / mercado</div>
+                          <Metric label="Precio actual" value={`$${s.currentPrice.toFixed(2)}`} good={null} />
+                          <Metric label="Máx 52 semanas" value={usd(s.high52w)} good={null} />
+                          <Metric label="Caída vs 52w" value={`${s.dropFrom52w.toFixed(1)}%`}
+                            good={s.dropFrom52w <= -20} />
+                          <Metric label="Market Cap" value={s.marketCap > 1e12
+                            ? `$${(s.marketCap / 1e12).toFixed(1)}T`
+                            : `$${(s.marketCap / 1e9).toFixed(0)}B`} good={null} />
                         </div>
                       </div>
-
-                      {/* Calidad */}
-                      <div>
-                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Calidad</h3>
-                        <div className="space-y-2.5">
-                          <div>
-                            <div className="text-xs text-gray-500">ROE / ROA</div>
-                            <ModelCell value={`${pct(s.roe * 100)} / ${pct(s.roa * 100)}`}
-                              good={s.roe > 0.15}
-                              label="ROE > 15% fuerte" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Margen operativo</div>
-                            <ModelCell value={pct(s.operatingMargin * 100)}
-                              good={s.operatingMargin > 0.15}
-                              label="> 15% sólido" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Margen neto</div>
-                            <ModelCell value={pct(s.netMargin * 100)}
-                              good={s.netMargin > 0.10}
-                              label="> 10% bueno" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Deuda / Patrimonio</div>
-                            <ModelCell value={s.debtToEquity > 0 ? (s.debtToEquity / 100).toFixed(2) : "—"}
-                              good={s.debtToEquity > 0 ? s.debtToEquity < 100 : null}
-                              label="< 1.0x conservador" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Beta</div>
-                            <span className="font-mono text-gray-300 text-sm">{fmt(s.beta, 2)}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Crecimiento */}
-                      <div>
-                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Crecimiento</h3>
-                        <div className="space-y-2.5">
-                          <div>
-                            <div className="text-xs text-gray-500">Crecimiento EPS</div>
-                            <ModelCell value={pct(s.earningsGrowth * 100)}
-                              good={s.earningsGrowth > 0.08}
-                              label="> 8% anual fuerte" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Crecimiento Ventas</div>
-                            <ModelCell value={pct(s.revenueGrowth * 100)}
-                              good={s.revenueGrowth > 0.05}
-                              label="> 5% anual sólido" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">FCF</div>
-                            <span className="font-mono text-gray-300 text-sm">
-                              {s.freeCashflow > 0
-                                ? `$${(s.freeCashflow / 1e9).toFixed(1)}B`
-                                : s.freeCashflow < 0
-                                ? `−$${(Math.abs(s.freeCashflow) / 1e9).toFixed(1)}B`
-                                : "—"}
-                            </span>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Dividend Yield</div>
-                            <span className="font-mono text-gray-300 text-sm">
-                              {s.dividendYield > 0 ? pct(s.dividendYield * 100) : "No paga"}
-                            </span>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500">Market Cap</div>
-                            <span className="font-mono text-gray-300 text-sm">
-                              {s.marketCap > 1e12
-                                ? `$${(s.marketCap / 1e12).toFixed(1)}T`
-                                : `$${(s.marketCap / 1e9).toFixed(0)}B`}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
                     </div>
                   )}
                 </div>

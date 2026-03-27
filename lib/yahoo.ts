@@ -113,7 +113,11 @@ export type StockData = {
   earningsGrowth: number
   revenueGrowth: number
 
-  // Score compuesto (0-100)
+  // FCF adicional
+  totalRevenue: number
+  fcfMargin: number       // FCF / Revenue
+
+  // Score compuesto (0-100) — legacy, mantenido para compatibilidad
   valueScore: number
   qualityScore: number
   compositeScore: number
@@ -260,6 +264,11 @@ export async function fetchStockData(symbol: string): Promise<StockData | null> 
 
       earningsGrowth: financial.earningsGrowth?.raw ?? 0,
       revenueGrowth:  financial.revenueGrowth?.raw  ?? 0,
+
+      totalRevenue: financial.totalRevenue?.raw ?? 0,
+      fcfMargin: (financial.totalRevenue?.raw ?? 0) > 0
+        ? (freeCashflow / financial.totalRevenue.raw)
+        : 0,
 
       valueScore:     Math.round(valueScore),
       qualityScore:   Math.round(qualityScore),

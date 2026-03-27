@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { DJIA_SYMBOLS, SP500_SYMBOLS } from "@/lib/symbols"
+import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS } from "@/lib/symbols"
 import type { StockData } from "@/lib/yahoo"
 
 async function fetchStock(symbol: string): Promise<StockData | null> {
@@ -47,7 +47,7 @@ export default function Home() {
   const [ran, setRan]                 = useState(false)
   const [progress, setProgress]       = useState(0)
   const [fetchedCount, setFetchedCount] = useState(0)
-  const [universe, setUniverse]       = useState<"dia" | "sp500">("dia")
+  const [universe, setUniverse]       = useState<"dia" | "sp500" | "nasdaq" | "russell">("dia")
   const [limit, setLimit]             = useState(50)
   const [sortBy, setSortBy]           = useState<"drop" | "graham" | "upside">("drop")
 
@@ -58,7 +58,11 @@ export default function Home() {
     setProgress(0)
     setFetchedCount(0)
 
-    const symbols = universe === "dia" ? DJIA_SYMBOLS : SP500_SYMBOLS.slice(0, limit)
+    const symbols =
+      universe === "dia"     ? DJIA_SYMBOLS :
+      universe === "nasdaq"  ? NASDAQ100_SYMBOLS :
+      universe === "russell" ? RUSSELL_SYMBOLS :
+      SP500_SYMBOLS.slice(0, limit)
     const results: StockData[] = []
     let done = 0
 
@@ -111,6 +115,8 @@ export default function Home() {
             >
               <option value="dia">Dow Jones 30</option>
               <option value="sp500">S&P 500</option>
+              <option value="nasdaq">Nasdaq 100</option>
+              <option value="russell">Russell 1000</option>
             </select>
           </div>
 
