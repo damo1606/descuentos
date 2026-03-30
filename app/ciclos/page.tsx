@@ -1,7 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import type { MacroData, PhaseDetection } from "@/lib/macro"
+
+type EtfData = {
+  symbol: string; sector: string; name: string
+  currentPrice: number; change1d: number | null
+  change52w: number | null; ytdReturn: number | null
+}
 
 type Phase = "recovery" | "expansion" | "late" | "recession"
 type Rating = "strong" | "neutral" | "weak"
@@ -195,7 +202,26 @@ function phaseSectorCount(phase: Phase, rating: Rating) {
 }
 
 export default function Ciclos() {
-  const [active, setActive] = useState<Phase>("recovery")
+  const [active, setActive]       = useState<Phase>("recovery")
+  const [macro,  setMacro]        = useState<(MacroData & { detection: PhaseDetection }) | null>(null)
+  const [etfs,   setEtfs]         = useState<EtfData[]>([])
+  const [loading, setLoading]     = useState(true)
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/macro").then(r => r.json()).catch(() => null),
+      fetch("/api/sectors-etf").then(r => r.json()).catch(() => null),
+    ]).then(([macroRes, etfRes]) => {
+      if (macroRes && !macroRes.error) {
+        setMacro(macroRes)
+        setActive(macroRes.detection?.phase ?? "expansion")
+      }
+      if (etfRes?.etfs) setEtfs(etfRes.etfs)
+      setLoading(false)
+    })
+  }, [])
+
+  const etfBySector = Object.fromEntries(etfs.map(e => [e.sector, e]))
   const phase = PHASES[active]
 
   return (
@@ -217,6 +243,69 @@ export default function Ciclos() {
       </div>
 
       <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+
+        {/* Panel de fase actual detectada */}
+        {loading ? (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+            <span className="text-sm text-gray-400">Consultando datos reales de FRED y Yahoo Finance...</span>
+          </div>
+        ) : macro ? (
+          <div className={`rounded-xl border px-5 py-4 ${PHASES[macro.detection.phase].bg} ${PHASES[macro.detection.phase].border}`}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: PHASES[macro.detection.phase].color }} />
+                  <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Fase actual detectada</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${PHASES[macro.detection.phase].badge}`}>
+                    {macro.detection.confidence}% confianza
+                  </span>
+                </div>
+                <h3 className={`text-xl font-black ${PHASES[macro.detection.phase].text}`}>
+                  {PHASES[macro.detection.phase].label}
+                </h3>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {macro.detection.signals.slice(0, 3).map((s, i) => (
+                    <span key={i} className="text-xs bg-gray-900/60 text-gray-400 px-2 py-0.5 rounded border border-gray-700">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Indicadores macro reales */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {[
+                  { d: macro.gdpGrowth,    label: "PIB YoY"       },
+                  { d: macro.inflation,    label: "Inflación"     },
+                  { d: macro.unemployment, label: "Desempleo"     },
+                  { d: macro.fedRate,      label: "Fed Rate"      },
+                  { d: macro.yieldCurve,   label: "Curva 10Y-2Y"  },
+                ].map(({ d, label }) => d && (
+                  <div key={label} className="bg-gray-900/70 rounded-lg px-3 py-2 min-w-[90px]">
+                    <div className="text-[10px] text-gray-600 mb-0.5">{label}</div>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-sm font-bold font-mono ${
+                        d.trend === "up" ? "text-green-400" :
+                        d.trend === "down" ? "text-red-400" : "text-gray-300"
+                      }`}>
+                        {d.value.toFixed(2)}{d.unit === "%" ? "%" : ""}
+                      </span>
+                      <span className="text-xs">{d.trend === "up" ? "↑" : d.trend === "down" ? "↓" : "→"}</span>
+                    </div>
+                    <div className="text-[10px] text-gray-600 mt-0.5">
+                      {d.date?.substring(0, 7)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gray-900 border border-red-900/40 rounded-xl px-5 py-3 text-sm text-red-400">
+            No se pudo obtener datos macroeconómicos. Mostrando modelo teórico.
+          </div>
+        )}
 
         {/* Wheel + Phase detail */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
@@ -379,6 +468,12 @@ export default function Ciclos() {
                       {PHASES[p].label}
                     </th>
                   ))}
+                  {etfs.length > 0 && (
+                    <>
+                      <th className="px-3 py-3 text-xs font-semibold text-center text-gray-500">1 Año</th>
+                      <th className="px-3 py-3 text-xs font-semibold text-center text-gray-500">YTD</th>
+                    </>
+                  )}
                   <th className="text-left px-4 py-3 text-xs text-gray-600 font-semibold hidden lg:table-cell">
                     Por qué
                   </th>
@@ -408,6 +503,40 @@ export default function Ciclos() {
                         </td>
                       )
                     })}
+                    {etfs.length > 0 && (() => {
+                      const etf = etfBySector[
+                        s.name === "Tecnología" ? "Technology" :
+                        s.name === "Servicios Financieros" ? "Financial Services" :
+                        s.name === "Salud / Biotech" ? "Healthcare" :
+                        s.name === "Consumo Discrecional" ? "Consumer Discretionary" :
+                        s.name === "Consumo Básico" ? "Consumer Staples" :
+                        s.name === "Industrial" ? "Industrials" :
+                        s.name === "Comunicaciones" ? "Communication Services" :
+                        s.name === "Energía" ? "Energy" :
+                        s.name === "Utilities" ? "Utilities" :
+                        s.name === "Inmobiliario" ? "Real Estate" :
+                        "Basic Materials"
+                      ]
+                      const fmt = (v: number | null) => v === null ? "—" :
+                        `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`
+                      const color = (v: number | null) => v === null ? "text-gray-600" :
+                        v >= 10 ? "text-emerald-400" : v >= 0 ? "text-green-400" :
+                        v >= -10 ? "text-orange-400" : "text-red-400"
+                      return (
+                        <>
+                          <td className="px-3 py-2.5 text-center">
+                            <span className={`text-xs font-bold font-mono ${color(etf?.change52w ?? null)}`}>
+                              {fmt(etf?.change52w ?? null)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <span className={`text-xs font-bold font-mono ${color(etf?.ytdReturn ?? null)}`}>
+                              {fmt(etf?.ytdReturn ?? null)}
+                            </span>
+                          </td>
+                        </>
+                      )
+                    })()}
                     <td className="px-4 py-3 text-xs text-gray-600 hidden lg:table-cell max-w-xs">
                       {s.note}
                     </td>
