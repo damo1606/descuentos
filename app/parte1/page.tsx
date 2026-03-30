@@ -88,6 +88,7 @@ export default function Parte1() {
   const [limit, setLimit]       = useState(50)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [minGrade, setMinGrade] = useState<string>("F")
+  const [sectorFilter, setSectorFilter] = useState<string>("all")
 
   const universeSymbols = UNIVERSES.find(u => u.key === universe)?.symbols ?? DJIA_SYMBOLS
   const symbols = universe === "sp500" ? universeSymbols.slice(0, limit) : universeSymbols
@@ -98,6 +99,7 @@ export default function Parte1() {
     setStocks([])
     setProgress(0)
     setFetched(0)
+    setSectorFilter("all")
 
     const results: Scored[] = []
     let done = 0
@@ -122,9 +124,22 @@ export default function Parte1() {
   }
 
   const GRADE_ORDER = ["F", "D", "C", "B", "A", "A+"]
-  const filtered = stocks.filter(s =>
+  const gradeFiltered = stocks.filter(s =>
     GRADE_ORDER.indexOf(s.score.grade) >= GRADE_ORDER.indexOf(minGrade)
   )
+  const sectors = Array.from(new Set(gradeFiltered.map(s => s.sector).filter(Boolean))).sort()
+  const filtered = sectorFilter === "all" ? gradeFiltered : gradeFiltered.filter(s => s.sector === sectorFilter)
+
+  // Sector distribution: per sector, count grades
+  const sectorDist = sectors.map(sec => {
+    const inSec = gradeFiltered.filter(s => s.sector === sec)
+    const counts = { "A+": 0, A: 0, B: 0, C: 0, D: 0, F: 0 } as Record<string, number>
+    inSec.forEach(s => { counts[s.score.grade] = (counts[s.score.grade] ?? 0) + 1 })
+    const best = inSec.reduce((best, s) =>
+      GRADE_ORDER.indexOf(s.score.grade) > GRADE_ORDER.indexOf(best?.score.grade ?? "F") ? s : best
+    , inSec[0])
+    return { sector: sec, total: inSec.length, counts, best }
+  })
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
@@ -235,11 +250,61 @@ export default function Parte1() {
           <div className="text-center py-20 text-red-400">No se pudo obtener datos. Intenta de nuevo.</div>
         )}
 
+        {/* Distribución por sector */}
+        {ran && !loading && sectorDist.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Distribución por Sector</span>
+              {sectorFilter !== "all" && (
+                <button onClick={() => setSectorFilter("all")} className="text-xs text-blue-400 hover:text-blue-300">
+                  × Quitar filtro
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+              {sectorDist.map(({ sector, total, counts, best }) => {
+                const topGrade = best?.score.grade ?? "F"
+                const active = sectorFilter === sector
+                const borderColor =
+                  topGrade === "A+" ? "border-emerald-700" :
+                  topGrade === "A"  ? "border-green-700" :
+                  topGrade === "B"  ? "border-blue-700" :
+                  topGrade === "C"  ? "border-yellow-700" :
+                  "border-gray-800"
+                return (
+                  <button key={sector}
+                    onClick={() => setSectorFilter(active ? "all" : sector)}
+                    className={`text-left p-3 rounded-lg border transition-all ${active ? "bg-gray-800 " + borderColor : "bg-gray-900 border-gray-800 hover:border-gray-700"}`}>
+                    <div className="text-xs font-semibold text-gray-300 truncate mb-1.5">{sector}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(["A+","A","B","C","D","F"] as const).map(g =>
+                        counts[g] > 0 ? (
+                          <span key={g} className={`text-[10px] font-bold px-1 py-0.5 rounded ${
+                            g === "A+" ? "bg-emerald-500/20 text-emerald-400" :
+                            g === "A"  ? "bg-green-600/20 text-green-400" :
+                            g === "B"  ? "bg-blue-600/20 text-blue-400" :
+                            g === "C"  ? "bg-yellow-600/20 text-yellow-400" :
+                            g === "D"  ? "bg-orange-600/20 text-orange-400" :
+                            "bg-red-700/20 text-red-400"
+                          }`}>{g}:{counts[g]}</span>
+                        ) : null
+                      )}
+                    </div>
+                    <div className="text-[10px] text-gray-600 mt-1">{total} empresa{total !== 1 ? "s" : ""}</div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Resultados */}
         {filtered.length > 0 && (
           <div className="space-y-3">
             <p className="text-sm text-gray-500">
-              {filtered.length} empresas{filtered.length !== stocks.length ? ` de ${stocks.length}` : ""} — ordenadas por score de calidad
+              {filtered.length} empresa{filtered.length !== 1 ? "s" : ""}
+              {sectorFilter !== "all" ? ` en ${sectorFilter}` : ""}
+              {filtered.length !== stocks.length ? ` de ${stocks.length}` : ""} — ordenadas por score de calidad
             </p>
 
             {filtered.map(s => {
