@@ -98,6 +98,10 @@ export default function Home() {
             <p className="text-gray-400 mt-1">Empresas de calidad castigadas por el mercado — Yahoo Finance</p>
           </div>
           <div className="ml-auto flex gap-2">
+            <Link href="/ciclos"
+              className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700">
+              Ciclos →
+            </Link>
             <Link href="/sectores"
               className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700">
               Sectores →
