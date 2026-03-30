@@ -349,6 +349,19 @@ export default function Parte1() {
                         ))}
                       </div>
 
+                      {/* Forward grade visible en fila */}
+                      {fw && (
+                        <div className="text-center min-w-[52px]">
+                          <div className={`text-base font-bold ${
+                            fw.forwardGrade === "A+" ? "text-emerald-400" :
+                            fw.forwardGrade === "A"  ? "text-green-400" :
+                            fw.forwardGrade === "B"  ? "text-blue-400" :
+                            fw.forwardGrade === "C"  ? "text-yellow-400" : "text-red-400"
+                          }`}>{fw.forwardGrade}</div>
+                          <div className="text-[10px] text-gray-600">Futuro</div>
+                        </div>
+                      )}
+
                       {/* Precio y veredicto */}
                       <div className="ml-auto text-right">
                         <div className="font-mono text-white">${s.currentPrice.toFixed(2)}</div>
@@ -479,7 +492,7 @@ export default function Parte1() {
                       </div>
 
                       {/* Prospectiva del Negocio */}
-                      <div className="mt-5 pt-5 border-t border-gray-800">
+                      {fw && <div className="mt-5 pt-5 border-t border-gray-800">
                         <div className="flex items-center gap-3 mb-4 flex-wrap">
                           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Prospectiva del Negocio</div>
                           <span className={`text-xs font-black px-2.5 py-1 rounded-lg ${
@@ -577,7 +590,7 @@ export default function Parte1() {
                             ))}
                           </div>
                         )}
-                      </div>
+                      </div>}
 
                       {/* Sección Dividendos */}
                       <div className="mt-5 pt-5 border-t border-gray-800">
