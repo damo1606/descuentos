@@ -1,7 +1,36 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+
+type EtfData = {
+  symbol: string; sector: string; name: string
+  currentPrice: number; change1d: number | null
+  change52w: number | null; ytdReturn: number | null
+}
+
+// Mapeo key de sector → sector Yahoo Finance para buscar el ETF
+const ETF_MAP: Record<string, string> = {
+  tech:          "Technology",
+  financials:    "Financial Services",
+  healthcare:    "Healthcare",
+  discretionary: "Consumer Discretionary",
+  staples:       "Consumer Staples",
+  industrials:   "Industrials",
+  comms:         "Communication Services",
+  energy:        "Energy",
+  utilities:     "Utilities",
+  realestate:    "Real Estate",
+  materials:     "Basic Materials",
+}
+
+// Símbolo del ETF de referencia por sector
+const ETF_SYMBOL: Record<string, string> = {
+  tech: "XLK", financials: "XLF", healthcare: "XLV",
+  discretionary: "XLY", staples: "XLP", industrials: "XLI",
+  comms: "XLC", energy: "XLE", utilities: "XLU",
+  realestate: "XLRE", materials: "XLB",
+}
 
 type Company = { symbol: string; name: string; weight: number }
 
@@ -351,9 +380,43 @@ function WeightBar({ value, max = 35 }: { value: number; max?: number }) {
   )
 }
 
+function pct(v: number | null) {
+  if (v === null) return "—"
+  return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`
+}
+function pctColor(v: number | null) {
+  if (v === null) return "text-gray-600"
+  if (v >= 15)   return "text-emerald-400"
+  if (v >= 5)    return "text-green-400"
+  if (v >= 0)    return "text-yellow-400"
+  if (v >= -10)  return "text-orange-400"
+  return "text-red-400"
+}
+function interpretation(change52w: number | null, ytd: number | null): string {
+  if (change52w === null) return "Sin datos disponibles."
+  if (change52w >= 25)  return "Sector en tendencia alcista fuerte — el mercado lo está priorizando."
+  if (change52w >= 10)  return "Rendimiento sólido en los últimos 12 meses — por encima del promedio."
+  if (change52w >= 0)   return "Rendimiento positivo moderado — en línea con el mercado."
+  if (change52w >= -10) return "Ligera caída — posible consolidación o rotación saliente."
+  if (change52w >= -20) return "Sector bajo presión — flujos saliendo hacia otros sectores."
+  return "Sector en corrección significativa — posible oportunidad o deterioro estructural."
+}
+
 export default function Sectores() {
   const [active, setActive] = useState("tech")
-  const sector = SECTORS.find(s => s.key === active)!
+  const [etfs,   setEtfs]   = useState<EtfData[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/sectors-etf")
+      .then(r => r.json())
+      .then(d => { if (d?.etfs) setEtfs(d.etfs) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const sector  = SECTORS.find(s => s.key === active)!
+  const etfData = etfs.find(e => e.sector === ETF_MAP[active]) ?? null
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100">
@@ -377,23 +440,33 @@ export default function Sectores() {
 
         {/* Tabs */}
         <div className="flex flex-wrap gap-2 mb-6">
-          {SECTORS.map(s => (
-            <button
-              key={s.key}
-              onClick={() => setActive(s.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                active === s.key
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-900 text-gray-400 hover:text-gray-200 border border-gray-800"
-              }`}
-            >
-              <span>{s.emoji}</span>
-              <span>{s.name}</span>
-              <span className={`text-xs ${active === s.key ? "text-blue-200" : "text-gray-600"}`}>
-                {s.spWeight}%
-              </span>
-            </button>
-          ))}
+          {SECTORS.map(s => {
+            const etf = etfs.find(e => e.sector === ETF_MAP[s.key])
+            const c52 = etf?.change52w ?? null
+            return (
+              <button
+                key={s.key}
+                onClick={() => setActive(s.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  active === s.key
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-900 text-gray-400 hover:text-gray-200 border border-gray-800"
+                }`}
+              >
+                <span>{s.emoji}</span>
+                <span>{s.name}</span>
+                {c52 !== null ? (
+                  <span className={`text-xs font-bold ${active === s.key ? "text-blue-100" : pctColor(c52)}`}>
+                    {pct(c52)}
+                  </span>
+                ) : (
+                  <span className={`text-xs ${active === s.key ? "text-blue-200" : "text-gray-600"}`}>
+                    {s.spWeight}%
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         {/* Contenido del sector */}
@@ -426,6 +499,91 @@ export default function Sectores() {
                   <div className="text-sm text-yellow-300 font-medium">{sector.capRange}</div>
                 </div>
               </div>
+            </div>
+
+            {/* Resumen de números reales — ETF sectorial */}
+            <div className={`rounded-xl border p-5 ${
+              etfData?.change52w != null && etfData.change52w >= 10
+                ? "bg-green-950/20 border-green-900/40"
+                : etfData?.change52w != null && etfData.change52w < -10
+                ? "bg-red-950/20 border-red-900/40"
+                : "bg-gray-900 border-gray-800"
+            }`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
+                  Rendimiento real — ETF {ETF_SYMBOL[active]}
+                </h3>
+                {loading && <span className="text-xs text-gray-600 animate-pulse">Cargando...</span>}
+                {!loading && !etfData && <span className="text-xs text-gray-600">Sin datos</span>}
+              </div>
+
+              {etfData ? (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                    <div className="bg-gray-900/70 rounded-lg px-3 py-2.5">
+                      <div className="text-[10px] text-gray-600 mb-0.5">Precio actual</div>
+                      <div className="text-base font-bold font-mono text-white">
+                        ${etfData.currentPrice.toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="bg-gray-900/70 rounded-lg px-3 py-2.5">
+                      <div className="text-[10px] text-gray-600 mb-0.5">Hoy</div>
+                      <div className={`text-base font-bold font-mono ${pctColor(etfData.change1d)}`}>
+                        {pct(etfData.change1d)}
+                      </div>
+                    </div>
+                    <div className="bg-gray-900/70 rounded-lg px-3 py-2.5">
+                      <div className="text-[10px] text-gray-600 mb-0.5">Últimos 12 meses</div>
+                      <div className={`text-base font-bold font-mono ${pctColor(etfData.change52w)}`}>
+                        {pct(etfData.change52w)}
+                      </div>
+                    </div>
+                    <div className="bg-gray-900/70 rounded-lg px-3 py-2.5">
+                      <div className="text-[10px] text-gray-600 mb-0.5">YTD {new Date().getFullYear()}</div>
+                      <div className={`text-base font-bold font-mono ${pctColor(etfData.ytdReturn)}`}>
+                        {pct(etfData.ytdReturn)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Barra visual de rendimiento 52w */}
+                  {etfData.change52w !== null && (
+                    <div className="mb-3">
+                      <div className="flex justify-between text-[10px] text-gray-600 mb-1">
+                        <span>-30%</span><span>0%</span><span>+30%</span>
+                      </div>
+                      <div className="relative w-full h-2 bg-gray-800 rounded-full">
+                        {/* Centro */}
+                        <div className="absolute left-1/2 top-0 w-px h-full bg-gray-600" />
+                        {/* Barra de rendimiento */}
+                        <div
+                          className={`absolute top-0 h-full rounded-full ${
+                            etfData.change52w >= 0 ? "bg-green-500" : "bg-red-500"
+                          }`}
+                          style={{
+                            left:  etfData.change52w >= 0 ? "50%" : `${Math.max(50 + (etfData.change52w / 30) * 50, 0)}%`,
+                            width: `${Math.min(Math.abs(etfData.change52w) / 30 * 50, 50)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Interpretación */}
+                  <p className="text-xs text-gray-400 leading-relaxed border-t border-gray-800 pt-3">
+                    <strong className="text-gray-300">Lectura: </strong>
+                    {interpretation(etfData.change52w, etfData.ytdReturn)}
+                    {etfData.change52w !== null && etfData.ytdReturn !== null && (
+                      <span className="text-gray-600">
+                        {" "}El ETF {ETF_SYMBOL[active]} acumula {pct(etfData.ytdReturn)} en lo que va del año
+                        y {pct(etfData.change52w)} en los últimos 12 meses.
+                      </span>
+                    )}
+                  </p>
+                </>
+              ) : !loading ? (
+                <p className="text-xs text-gray-600">No se pudo obtener datos del ETF {ETF_SYMBOL[active]}.</p>
+              ) : null}
             </div>
 
             {/* Métricas clave */}
