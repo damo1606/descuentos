@@ -4,17 +4,19 @@ import { useState } from "react"
 import Link from "next/link"
 import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS } from "@/lib/symbols"
 import { scoreStock } from "@/lib/scoring"
+import { analyzeForward } from "@/lib/forward"
 import type { StockData } from "@/lib/yahoo"
 import type { ScoreBreakdown } from "@/lib/scoring"
+import type { ForwardAnalysis } from "@/lib/forward"
 
-type Scored = StockData & { score: ScoreBreakdown }
+type Scored = StockData & { score: ScoreBreakdown; forward: ForwardAnalysis }
 
 async function fetchStock(symbol: string): Promise<Scored | null> {
   try {
     const res = await fetch(`/api/stock/${symbol}`)
     if (!res.ok) return null
     const data: StockData = await res.json()
-    return { ...data, score: scoreStock(data) }
+    return { ...data, score: scoreStock(data), forward: analyzeForward(data) }
   } catch {
     return null
   }
@@ -307,6 +309,7 @@ export default function Parte1() {
             {filtered.map(s => {
               const open = expanded === s.symbol
               const sc = s.score
+              const fw = s.forward
               return (
                 <div key={s.symbol} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
 
@@ -473,6 +476,107 @@ export default function Parte1() {
                             ? `$${(s.marketCap / 1e12).toFixed(1)}T`
                             : `$${(s.marketCap / 1e9).toFixed(0)}B`} good={null} />
                         </div>
+                      </div>
+
+                      {/* Prospectiva del Negocio */}
+                      <div className="mt-5 pt-5 border-t border-gray-800">
+                        <div className="flex items-center gap-3 mb-4 flex-wrap">
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Prospectiva del Negocio</div>
+                          <span className={`text-xs font-black px-2.5 py-1 rounded-lg ${
+                            fw.forwardGrade === "A+" ? "bg-emerald-600 text-white" :
+                            fw.forwardGrade === "A"  ? "bg-green-700 text-white" :
+                            fw.forwardGrade === "B"  ? "bg-blue-700 text-white" :
+                            fw.forwardGrade === "C"  ? "bg-yellow-700 text-white" :
+                            "bg-red-800 text-white"
+                          }`}>{fw.forwardGrade} Prospectiva — {fw.forwardScore}/100</span>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                          {/* Etapa de crecimiento */}
+                          <div className="bg-gray-900 rounded-lg p-3">
+                            <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1">Etapa del Negocio</div>
+                            <div className={`text-sm font-bold ${fw.growthStageColor}`}>{fw.growthStageLabel}</div>
+                            <div className="text-[11px] text-gray-600 mt-1">Revenue YoY {fw.growthStage === "declive" ? "" : "+"}{(s.revenueGrowth * 100).toFixed(1)}%</div>
+                          </div>
+
+                          {/* Dirección de earnings */}
+                          <div className="bg-gray-900 rounded-lg p-3">
+                            <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1">Earnings Futuros</div>
+                            <div className={`text-sm font-bold ${fw.earningsDirectionColor}`}>{fw.earningsDirectionLabel}</div>
+                            <div className="text-[11px] text-gray-600 mt-1">
+                              {s.pe > 0 && s.forwardPe > 0
+                                ? `P/E trailing ${s.pe.toFixed(1)}x → forward ${s.forwardPe.toFixed(1)}x`
+                                : s.earningsGrowth !== 0 ? `EPS YoY ${s.earningsGrowth >= 0 ? "+" : ""}${(s.earningsGrowth * 100).toFixed(1)}%` : "Sin datos"}
+                            </div>
+                          </div>
+
+                          {/* Apalancamiento operativo */}
+                          <div className="bg-gray-900 rounded-lg p-3">
+                            <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1">Apal. Operativo</div>
+                            <div className={`text-sm font-bold ${
+                              fw.operatingLeverage === "positivo" ? "text-green-400" :
+                              fw.operatingLeverage === "negativo" ? "text-red-400" : "text-gray-400"
+                            }`}>{fw.operatingLeverage === "positivo" ? "Positivo ↑" : fw.operatingLeverage === "negativo" ? "Negativo ↓" : "Neutro →"}</div>
+                            <div className="text-[11px] text-gray-600 mt-1 leading-tight">{fw.operatingLeverageLabel.split(" — ")[1]}</div>
+                          </div>
+
+                          {/* Señal de CAP */}
+                          <div className="bg-gray-900 rounded-lg p-3">
+                            <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1">Moat (CAP signal)</div>
+                            <div className={`text-sm font-bold ${fw.capSignalColor}`}>
+                              {fw.capSignal === "fortaleciendo" ? "Fortaleciendo ↑" :
+                               fw.capSignal === "debilitando"   ? "Debilitando ↓"   : "Estable →"}
+                            </div>
+                            <div className="text-[11px] text-gray-600 mt-1 leading-tight">
+                              {fw.capSignalLabel.split(" — ")[1]?.slice(0, 45) ?? ""}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Riesgo de Disrupción */}
+                        <div className="bg-gray-900/80 border border-gray-800 rounded-lg p-4 mb-3">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="text-xs font-semibold text-gray-400">Riesgo de Disrupción Sectorial</div>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                              fw.disruption.risk <= 2 ? "bg-green-900/50 text-green-400" :
+                              fw.disruption.risk === 3 ? "bg-yellow-900/50 text-yellow-400" :
+                              "bg-red-900/50 text-red-400"
+                            }`}>{fw.disruption.label} ({fw.disruption.risk}/5)</span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <div className="text-[10px] text-red-500 uppercase tracking-wider mb-1.5">Amenazas</div>
+                              <ul className="space-y-1">
+                                {fw.disruption.threats.map((t, i) => (
+                                  <li key={i} className="text-[11px] text-gray-400 flex gap-1.5 leading-relaxed">
+                                    <span className="text-red-600 shrink-0 mt-0.5">▸</span>{t}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div>
+                              <div className="text-[10px] text-green-500 uppercase tracking-wider mb-1.5">Oportunidades</div>
+                              <ul className="space-y-1">
+                                {fw.disruption.opportunities.map((o, i) => (
+                                  <li key={i} className="text-[11px] text-gray-400 flex gap-1.5 leading-relaxed">
+                                    <span className="text-green-600 shrink-0 mt-0.5">▸</span>{o}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Señales narrativas */}
+                        {fw.signals.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {fw.signals.map((sig, i) => (
+                              <span key={i} className="text-[11px] bg-gray-800/60 text-gray-400 px-2 py-1 rounded border border-gray-700/50">
+                                {sig}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* Sección Dividendos */}

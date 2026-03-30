@@ -110,8 +110,9 @@ export type StockData = {
   netMargin: number
 
   // Crecimiento
-  earningsGrowth: number
-  revenueGrowth: number
+  earningsGrowth:          number   // YoY anual
+  revenueGrowth:           number   // YoY anual
+  earningsQuarterlyGrowth: number   // YoY trimestral más reciente (leading indicator)
 
   // FCF adicional
   totalRevenue: number
@@ -275,8 +276,9 @@ export async function fetchStockData(symbol: string): Promise<StockData | null> 
       operatingMargin,
       netMargin:       financial.profitMargins?.raw   ?? 0,
 
-      earningsGrowth: financial.earningsGrowth?.raw ?? 0,
-      revenueGrowth:  financial.revenueGrowth?.raw  ?? 0,
+      earningsGrowth:          financial.earningsGrowth?.raw         ?? 0,
+      revenueGrowth:           financial.revenueGrowth?.raw          ?? 0,
+      earningsQuarterlyGrowth: stats.earningsQuarterlyGrowth?.raw    ?? 0,
 
       totalRevenue: financial.totalRevenue?.raw ?? 0,
       fcfMargin: (financial.totalRevenue?.raw ?? 0) > 0
