@@ -97,10 +97,16 @@ export default function Home() {
             <h1 className="text-3xl font-bold text-white">Descuentos</h1>
             <p className="text-gray-400 mt-1">Empresas de calidad castigadas por el mercado — Yahoo Finance</p>
           </div>
-          <Link href="/parte1"
-            className="ml-auto bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700">
-            Parte 1 — Valoración →
-          </Link>
+          <div className="ml-auto flex gap-2">
+            <Link href="/sectores"
+              className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700">
+              Sectores →
+            </Link>
+            <Link href="/parte1"
+              className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700">
+              Valoración →
+            </Link>
+          </div>
         </div>
 
         {/* Filtros */}

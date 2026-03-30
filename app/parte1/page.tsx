@@ -136,9 +136,14 @@ export default function Parte1() {
             <h1 className="text-3xl font-bold text-white">Valoración de Empresas</h1>
             <p className="text-gray-400 mt-1">Modelo de calidad primero — como lo hacen los grandes fondos</p>
           </div>
-          <Link href="/" className="text-sm text-gray-500 hover:text-gray-300 transition-colors shrink-0">
-            ← Screener
-          </Link>
+          <div className="flex gap-4 shrink-0">
+            <Link href="/sectores" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">
+              Sectores →
+            </Link>
+            <Link href="/" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">
+              ← Screener
+            </Link>
+          </div>
         </div>
 
         {/* Panel explicativo */}
