@@ -6,6 +6,15 @@ import Link from "next/link"
 type Phase = "recovery" | "expansion" | "late" | "recession"
 type Rating = "strong" | "neutral" | "weak"
 
+// Score de calor 1-10: intensidad de atractivo del sector en cada fase
+function heat(score: number): { bg: string; text: string; border: string; label: string } {
+  if (score >= 9) return { bg: "bg-emerald-600",    text: "text-white",        border: "border-emerald-500", label: "Outperform" }
+  if (score >= 7) return { bg: "bg-green-700/80",   text: "text-green-100",    border: "border-green-600",   label: "Outperform" }
+  if (score >= 5) return { bg: "bg-gray-700/60",    text: "text-gray-300",     border: "border-gray-600",    label: "Neutral" }
+  if (score >= 3) return { bg: "bg-orange-900/70",  text: "text-orange-300",   border: "border-orange-800",  label: "Underperform" }
+  return           { bg: "bg-red-900/70",   text: "text-red-300",      border: "border-red-800",     label: "Underperform" }
+}
+
 const PHASES: Record<Phase, {
   label: string
   labelShort: string
@@ -105,42 +114,55 @@ type SectorCycle = {
   expansion: Rating
   late: Rating
   recession: Rating
+  // Score de calor 1-10 por fase
+  scores: { recovery: number; expansion: number; late: number; recession: number }
   note: string
 }
 
 const SECTORS: SectorCycle[] = [
   { name: "Servicios Financieros", emoji: "🏦",
     recovery: "strong",  expansion: "strong",  late: "neutral", recession: "weak",
+    scores: { recovery: 9, expansion: 8, late: 5, recession: 2 },
     note: "Beneficia de tasas bajas, crédito expansivo y valuaciones de activos subiendo" },
   { name: "Consumo Discrecional",  emoji: "🛍️",
     recovery: "strong",  expansion: "strong",  late: "weak",    recession: "weak",
+    scores: { recovery: 8, expansion: 8, late: 3, recession: 2 },
     note: "Directamente ligado al empleo y confianza del consumidor" },
   { name: "Industriales",          emoji: "⚙️",
     recovery: "strong",  expansion: "strong",  late: "neutral", recession: "weak",
+    scores: { recovery: 8, expansion: 8, late: 5, recession: 2 },
     note: "El capex empresarial sigue al ciclo con cierto retraso" },
   { name: "Inmobiliario",          emoji: "🏢",
     recovery: "strong",  expansion: "neutral", late: "weak",    recession: "neutral",
+    scores: { recovery: 8, expansion: 5, late: 3, recession: 5 },
     note: "Tasas bajas en recuperación impulsan las valuaciones inmobiliarias" },
   { name: "Tecnología",            emoji: "💻",
     recovery: "neutral", expansion: "strong",  late: "weak",    recession: "neutral",
+    scores: { recovery: 5, expansion: 9, late: 3, recession: 5 },
     note: "Las valuaciones altas son vulnerables cuando las tasas suben" },
   { name: "Comunicaciones",        emoji: "📡",
     recovery: "neutral", expansion: "strong",  late: "neutral", recession: "neutral",
+    scores: { recovery: 5, expansion: 8, late: 5, recession: 5 },
     note: "La publicidad digital sigue el ciclo económico" },
   { name: "Materiales",            emoji: "⛏️",
     recovery: "neutral", expansion: "strong",  late: "strong",  recession: "weak",
+    scores: { recovery: 5, expansion: 8, late: 8, recession: 2 },
     note: "La demanda de commodities llega a su pico al final del ciclo" },
   { name: "Energía",               emoji: "⛽",
     recovery: "neutral", expansion: "neutral", late: "strong",  recession: "weak",
+    scores: { recovery: 4, expansion: 5, late: 9, recession: 2 },
     note: "El precio del petróleo sube con la inflación en ciclo tardío" },
   { name: "Salud / Biotech",       emoji: "🧬",
     recovery: "neutral", expansion: "neutral", late: "strong",  recession: "strong",
+    scores: { recovery: 5, expansion: 5, late: 8, recession: 9 },
     note: "Demanda inelástica — defensivo en cualquier entorno económico" },
   { name: "Consumo Básico",        emoji: "🛒",
     recovery: "weak",    expansion: "weak",    late: "strong",  recession: "strong",
+    scores: { recovery: 3, expansion: 3, late: 8, recession: 9 },
     note: "Productos esenciales — protección en recesión y desaceleración" },
   { name: "Utilities",             emoji: "⚡",
     recovery: "weak",    expansion: "weak",    late: "neutral", recession: "strong",
+    scores: { recovery: 2, expansion: 2, late: 5, recession: 9 },
     note: "Se comporta como bono largo — sube cuando las tasas bajan" },
 ]
 
@@ -310,20 +332,27 @@ export default function Ciclos() {
               </ul>
             </div>
 
-            {/* Sectors en esta fase */}
+            {/* Sectors en esta fase — ordenados por score */}
             <div>
-              <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Sectores en esta fase</div>
-              <div className="flex flex-wrap gap-1.5">
-                {SECTORS.filter(s => s[active] === "strong").map(s => (
-                  <span key={s.name} className="text-xs bg-green-950/60 border border-green-900/50 text-green-300 px-2 py-0.5 rounded-full">
-                    {s.emoji} {s.name}
-                  </span>
-                ))}
-                {SECTORS.filter(s => s[active] === "weak").map(s => (
-                  <span key={s.name} className="text-xs bg-red-950/60 border border-red-900/50 text-red-400 px-2 py-0.5 rounded-full">
-                    {s.emoji} {s.name}
-                  </span>
-                ))}
+              <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Ranking de sectores — esta fase</div>
+              <div className="space-y-1.5">
+                {[...SECTORS]
+                  .sort((a, b) => b.scores[active] - a.scores[active])
+                  .map(s => {
+                    const score = s.scores[active]
+                    const h = heat(score)
+                    return (
+                      <div key={s.name} className="flex items-center gap-2">
+                        <span className={`w-7 h-7 rounded-lg text-sm font-black flex items-center justify-center shrink-0 border ${h.bg} ${h.text} ${h.border}`}>
+                          {score}
+                        </span>
+                        <span className="text-xs text-gray-300">{s.emoji} {s.name}</span>
+                        <div className="flex-1 bg-gray-800 rounded-full h-1 ml-1">
+                          <div className={`h-1 rounded-full ${h.bg}`} style={{ width: `${score * 10}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
               </div>
             </div>
           </div>
@@ -362,15 +391,20 @@ export default function Ciclos() {
                       <span className="font-medium text-gray-200">{s.emoji} {s.name}</span>
                     </td>
                     {(["recovery","expansion","late","recession"] as Phase[]).map(p => {
-                      const r = RATING[s[p]]
+                      const score = s.scores[p]
+                      const h = heat(score)
                       return (
-                        <td key={p} className="px-2 py-3 text-center">
-                          <span className={`inline-flex items-center justify-center gap-1 text-xs font-semibold px-2 py-1 rounded border ${r.cell} ${
-                            active === p ? "ring-1 ring-offset-1 ring-offset-gray-900 ring-white/20" : ""
-                          }`}>
-                            <span>{r.icon}</span>
-                            <span className="hidden sm:inline">{r.label}</span>
-                          </span>
+                        <td key={p} className={`px-2 py-2.5 text-center ${active === p ? "bg-white/5" : ""}`}>
+                          <div className="flex flex-col items-center gap-1">
+                            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-black border ${h.bg} ${h.text} ${h.border} ${
+                              active === p ? "ring-2 ring-offset-1 ring-offset-gray-900 ring-white/30" : ""
+                            }`}>
+                              {score}
+                            </span>
+                            <span className={`text-[10px] font-medium ${h.text} opacity-70 hidden sm:block`}>
+                              {h.label}
+                            </span>
+                          </div>
                         </td>
                       )
                     })}
@@ -384,15 +418,23 @@ export default function Ciclos() {
           </div>
 
           {/* Legend */}
-          <div className="px-5 py-3 border-t border-gray-800 flex flex-wrap gap-4">
-            {Object.entries(RATING).map(([key, r]) => (
-              <div key={key} className="flex items-center gap-1.5 text-xs text-gray-500">
-                <span className={`w-2 h-2 rounded-full ${r.dot}`}/>
-                <span>{r.icon} {r.label}</span>
+          <div className="px-5 py-3 border-t border-gray-800 flex flex-wrap gap-3 items-center">
+            {[
+              { score: "9-10", label: "Outperform fuerte",  bg: "bg-emerald-600",   text: "text-white" },
+              { score: "7-8",  label: "Outperform",         bg: "bg-green-700/80",  text: "text-green-100" },
+              { score: "5-6",  label: "Neutral",            bg: "bg-gray-700/60",   text: "text-gray-300" },
+              { score: "3-4",  label: "Underperform",       bg: "bg-orange-900/70", text: "text-orange-300" },
+              { score: "1-2",  label: "Underperform fuerte",bg: "bg-red-900/70",    text: "text-red-300" },
+            ].map(l => (
+              <div key={l.score} className="flex items-center gap-1.5">
+                <span className={`w-6 h-6 rounded text-xs font-black flex items-center justify-center ${l.bg} ${l.text}`}>
+                  {l.score.split("-")[0]}
+                </span>
+                <span className="text-xs text-gray-500">{l.label}</span>
               </div>
             ))}
             <span className="text-xs text-gray-700 ml-auto hidden lg:block">
-              Basado en el modelo de rotación sectorial de Fidelity Investments / Goldman Sachs
+              Modelo Fidelity / Goldman Sachs — escala 1-10
             </span>
           </div>
         </div>
