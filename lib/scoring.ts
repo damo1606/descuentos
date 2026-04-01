@@ -117,7 +117,9 @@ export function scoreStock(s: StockData): ScoreBreakdown {
     ? clamp(lerp(-s.evToEbitda, [-40, -20, -10, -5], [0, 20, 65, 100]))
     : 50
 
-  const upsideScore = clamp(lerp(s.upsideToTarget, [-10, 0, 15, 35], [0, 20, 60, 100]))
+  const upsideScore = s.analystTarget > 0
+    ? clamp(lerp(s.upsideToTarget, [-10, 0, 15, 35], [0, 20, 60, 100]))
+    : 50
 
   const priceScore = clamp(
     pfcfScore    * 0.45 +

@@ -40,6 +40,28 @@ export const NASDAQ100_SYMBOLS = [
   "COIN","MELI","PDD","BIDU","JD","NTES","WBD","PARA","SIRI","LCID",
 ]
 
+// Russell 2000 — small caps de calidad curadas por sector
+export const RUSSELL2000_SYMBOLS = [
+  // Technology
+  "SLAB","MGNI","CERT","TASK","POWI","CALX","PRGS","BAND",
+  // Healthcare
+  "TMDX","ACAD","ITCI","RCUS","IMVT","VERA","COLL","PAHC","ADUS","INVA",
+  // Financials
+  "WSFS","WAFD","NBTB","SFNC","HONE","FBIZ",
+  // Consumer Discretionary
+  "BOOT","CVCO","GENI","LESL","CATO",
+  // Consumer Staples
+  "CENT","SMPL","JBSS","SPTN",
+  // Industrials
+  "KFRC","PRIM","MTRX","HY","DXPE","HAYW",
+  // Energy
+  "MGY","TALO","SM","VTLE",
+  // Materials
+  "AZEK","DOOR",
+  // Real Estate
+  "GMRE","NXRT","ILPT","FCPT",
+]
+
 // Russell 1000 — adicionales al S&P 500 (small/mid cap de calidad)
 export const RUSSELL_SYMBOLS = [
   "AXON","HUBS","APP","ENPH","MPWR","ENTG","PODD","TRMB","ALGN","LULU",

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS } from "@/lib/symbols"
+import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS, RUSSELL2000_SYMBOLS } from "@/lib/symbols"
 import type { StockData } from "@/lib/yahoo"
 
 async function fetchStock(symbol: string): Promise<StockData | null> {
@@ -47,7 +47,7 @@ export default function Home() {
   const [ran, setRan]                 = useState(false)
   const [progress, setProgress]       = useState(0)
   const [fetchedCount, setFetchedCount] = useState(0)
-  const [universe, setUniverse]       = useState<"dia" | "sp500" | "nasdaq" | "russell">("dia")
+  const [universe, setUniverse]       = useState<"dia" | "sp500" | "nasdaq" | "russell" | "r2000">("dia")
   const [limit, setLimit]             = useState(50)
   const [sortBy, setSortBy]           = useState<"drop" | "graham" | "upside">("drop")
 
@@ -62,6 +62,7 @@ export default function Home() {
       universe === "dia"     ? DJIA_SYMBOLS :
       universe === "nasdaq"  ? NASDAQ100_SYMBOLS :
       universe === "russell" ? RUSSELL_SYMBOLS :
+      universe === "r2000"   ? RUSSELL2000_SYMBOLS :
       SP500_SYMBOLS.slice(0, limit)
     const results: StockData[] = []
     let done = 0
@@ -112,13 +113,14 @@ export default function Home() {
             <label className="block text-xs text-gray-400 mb-1">Universo</label>
             <select
               value={universe}
-              onChange={(e) => { setUniverse(e.target.value as "dia" | "sp500"); setStocks([]); setRan(false) }}
+              onChange={(e) => { setUniverse(e.target.value as "dia" | "sp500" | "nasdaq" | "russell" | "r2000"); setStocks([]); setRan(false) }}
               className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white"
             >
               <option value="dia">Dow Jones 30</option>
               <option value="sp500">S&P 500</option>
               <option value="nasdaq">Nasdaq 100</option>
               <option value="russell">Russell 1000</option>
+              <option value="r2000">Russell 2000</option>
             </select>
           </div>
 

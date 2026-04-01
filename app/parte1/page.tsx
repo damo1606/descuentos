@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS } from "@/lib/symbols"
+import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS, RUSSELL2000_SYMBOLS } from "@/lib/symbols"
 import { scoreStock } from "@/lib/scoring"
 import { analyzeForward } from "@/lib/forward"
 import type { StockData } from "@/lib/yahoo"
@@ -72,12 +72,13 @@ function Metric({ label, value, good, note }: { label: string; value: string; go
   )
 }
 
-type Universe = "dia" | "sp500" | "nasdaq" | "russell"
+type Universe = "dia" | "sp500" | "nasdaq" | "russell" | "r2000"
 const UNIVERSES: { key: Universe; label: string; symbols: string[] }[] = [
   { key: "dia",     label: "Dow Jones 30",  symbols: DJIA_SYMBOLS },
   { key: "sp500",   label: "S&P 500",       symbols: SP500_SYMBOLS },
   { key: "nasdaq",  label: "Nasdaq 100",    symbols: NASDAQ100_SYMBOLS },
   { key: "russell", label: "Russell 1000",  symbols: RUSSELL_SYMBOLS },
+  { key: "r2000",   label: "Russell 2000",  symbols: RUSSELL2000_SYMBOLS },
 ]
 
 export default function Parte1() {
