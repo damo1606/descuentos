@@ -428,10 +428,11 @@ export default function Sectores() {
             <h1 className="text-2xl font-bold text-white">Sectores del S&P 500</h1>
             <p className="text-gray-400 text-sm mt-1">11 sectores GICS — métricas clave, tipo de moat, CAP y empresas principales</p>
           </div>
-          <div className="flex gap-3 shrink-0">
-            <Link href="/ciclos"  className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Ciclos →</Link>
-            <Link href="/parte1" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Valoración →</Link>
-            <Link href="/"       className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Screener →</Link>
+          <div className="flex gap-3 shrink-0 flex-wrap justify-end text-sm">
+            <Link href="/ciclos"      className="text-gray-500 hover:text-gray-300 transition-colors">Ciclos →</Link>
+            <Link href="/parte1"      className="text-gray-500 hover:text-gray-300 transition-colors">Valoración →</Link>
+            <Link href="/prospectiva" className="text-purple-500 hover:text-purple-300 transition-colors">Prospectiva →</Link>
+            <Link href="/"            className="text-gray-500 hover:text-gray-300 transition-colors">Screener →</Link>
           </div>
         </div>
       </div>

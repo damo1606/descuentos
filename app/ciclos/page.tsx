@@ -234,10 +234,11 @@ export default function Ciclos() {
             <h1 className="text-2xl font-bold text-white">Ciclos Económicos</h1>
             <p className="text-gray-400 text-sm mt-1">Rotación sectorial según la fase del ciclo — modelo Fidelity / Goldman Sachs</p>
           </div>
-          <div className="flex gap-3 shrink-0 text-sm">
-            <Link href="/sectores" className="text-gray-500 hover:text-gray-300 transition-colors">Sectores →</Link>
-            <Link href="/parte1"   className="text-gray-500 hover:text-gray-300 transition-colors">Valoración →</Link>
-            <Link href="/"         className="text-gray-500 hover:text-gray-300 transition-colors">Screener →</Link>
+          <div className="flex gap-3 shrink-0 flex-wrap justify-end text-sm">
+            <Link href="/sectores"    className="text-gray-500 hover:text-gray-300 transition-colors">Sectores →</Link>
+            <Link href="/parte1"      className="text-gray-500 hover:text-gray-300 transition-colors">Valoración →</Link>
+            <Link href="/prospectiva" className="text-purple-500 hover:text-purple-300 transition-colors">Prospectiva →</Link>
+            <Link href="/"            className="text-gray-500 hover:text-gray-300 transition-colors">Screener →</Link>
           </div>
         </div>
       </div>
