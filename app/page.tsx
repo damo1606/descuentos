@@ -82,7 +82,9 @@ export default function Home() {
   const [fetchedCount, setFetchedCount] = useState(0)
   const [universe, setUniverse]       = useState<"dia" | "sp500" | "nasdaq" | "russell" | "r2000" | "quantum" | "biotech-small" | "tech-small" | "consumer-small">("dia")
   const [limit, setLimit]             = useState(50)
-  const [sortBy, setSortBy]           = useState<"drop" | "graham" | "upside" | "grade" | "buy">("drop")
+  type SortCol = "symbol" | "grade" | "buy" | "sector" | "price" | "drop" | "graham" | "upside" | "pe" | "pb" | "roe" | "de" | "eps"
+  const [sortBy, setSortBy]           = useState<SortCol>("drop")
+  const [sortDir, setSortDir]         = useState<"asc" | "desc">("asc")
   const [phase, setPhase]             = useState<Phase | null>(null)
   const [phaseConf, setPhaseConf]     = useState<number>(0)
   const [filterByCycle, setFilterByCycle] = useState(false)
@@ -140,21 +142,37 @@ export default function Home() {
       setFetchedCount(results.length)
     }
 
-    const sorted = [...results].sort((a, b) => {
-      if (sortBy === "drop")   return a.dropFrom52w - b.dropFrom52w
-      if (sortBy === "graham") return b.discountToGraham - a.discountToGraham
-      if (sortBy === "upside") return b.upsideToTarget - a.upsideToTarget
-      if (sortBy === "buy")    return b.score.buyScore - a.score.buyScore
-      if (sortBy === "grade") {
-        const ORDER = ["F","D","C","B","A","A+"]
-        return ORDER.indexOf(b.score.grade) - ORDER.indexOf(a.score.grade)
-      }
-      return 0
-    })
-
-    setStocks(sorted)
+    setStocks(results)
     setLoading(false)
     setRan(true)
+  }
+
+  function getSortValue(s: Scored, col: SortCol): number | string {
+    const GRADE_ORDER = ["F","D","C","B","A","A+"]
+    switch (col) {
+      case "symbol":  return s.symbol
+      case "sector":  return s.sector
+      case "grade":   return GRADE_ORDER.indexOf(s.score.grade)
+      case "buy":     return s.score.buyScore
+      case "price":   return s.currentPrice
+      case "drop":    return s.dropFrom52w
+      case "graham":  return s.discountToGraham
+      case "upside":  return s.upsideToTarget
+      case "pe":      return s.pe
+      case "pb":      return s.pb
+      case "roe":     return s.roe * 100
+      case "de":      return s.debtToEquity / 100
+      case "eps":     return s.earningsGrowth * 100
+    }
+  }
+
+  function handleSort(col: SortCol) {
+    if (sortBy === col) {
+      setSortDir(d => d === "desc" ? "asc" : "desc")
+    } else {
+      setSortBy(col)
+      setSortDir("desc")
+    }
   }
 
   return (
@@ -208,18 +226,6 @@ export default function Home() {
               </select>
             </div>
           )}
-
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Ordenar por</label>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white">
-              <option value="drop">Mayor caída desde 52w</option>
-              <option value="graham">Mayor descuento vs Graham</option>
-              <option value="upside">Mayor upside a target analistas</option>
-              <option value="grade">Mayor grado de calidad</option>
-              <option value="buy">Mayor score de compra</option>
-            </select>
-          </div>
 
           {phase && (
             <div className="flex items-center gap-2">
@@ -275,9 +281,29 @@ export default function Home() {
           const filtered = filterByCycle && phase
             ? stocks.filter(s => PHASE_SECTORS[phase].includes(s.sector))
             : stocks
-          const displayed = showWatchlist
+          const watchFiltered = showWatchlist
             ? filtered.filter(s => watchlist.has(s.symbol))
             : filtered
+          const displayed = [...watchFiltered].sort((a, b) => {
+            const av = getSortValue(a, sortBy)
+            const bv = getSortValue(b, sortBy)
+            const cmp = typeof av === "string" ? av.localeCompare(bv as string) : (av as number) - (bv as number)
+            return sortDir === "desc" ? -cmp : cmp
+          })
+
+          function Th({ col, label, right }: { col: SortCol; label: string; right?: boolean }) {
+            const active = sortBy === col
+            const arrow = active ? (sortDir === "desc" ? " ↓" : " ↑") : ""
+            return (
+              <th
+                onClick={() => handleSort(col)}
+                className={`pb-2 pr-4 ${right ? "text-right" : ""} cursor-pointer select-none whitespace-nowrap transition-colors ${active ? "text-white" : "text-gray-500 hover:text-gray-300"}`}
+              >
+                {label}{arrow}
+              </th>
+            )
+          }
+
           return (
           <>
             <div className="text-sm text-gray-400 mb-3">
@@ -286,23 +312,23 @@ export default function Home() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm whitespace-nowrap">
                 <thead>
-                  <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
-                    <th className="pb-2 pr-6">Empresa</th>
-                    <th className="pb-2 pr-4">Grado</th>
-                    <th className="pb-2 pr-4 text-right">Compra</th>
-                    <th className="pb-2 pr-4">Sector</th>
-                    <th className="pb-2 pr-4 text-right">Precio</th>
-                    <th className="pb-2 pr-4 text-right">Máx 52w</th>
-                    <th className="pb-2 pr-4 text-right">Caída</th>
-                    <th className="pb-2 pr-4 text-right">Graham #</th>
-                    <th className="pb-2 pr-4 text-right">vs Graham</th>
-                    <th className="pb-2 pr-4 text-right">Target</th>
-                    <th className="pb-2 pr-4 text-right">Upside</th>
-                    <th className="pb-2 pr-4 text-right">P/E</th>
-                    <th className="pb-2 pr-4 text-right">P/B</th>
-                    <th className="pb-2 pr-4 text-right">ROE</th>
-                    <th className="pb-2 pr-4 text-right">D/E</th>
-                    <th className="pb-2 text-right">Crec. EPS</th>
+                  <tr className="text-left text-xs border-b border-gray-800">
+                    <th className="pb-2 pr-6 text-gray-500">Empresa</th>
+                    <Th col="grade"  label="Grado" />
+                    <Th col="buy"    label="Compra" right />
+                    <Th col="sector" label="Sector" />
+                    <Th col="price"  label="Precio" right />
+                    <th className="pb-2 pr-4 text-right text-gray-500">Máx 52w</th>
+                    <Th col="drop"    label="Caída"    right />
+                    <th className="pb-2 pr-4 text-right text-gray-500">Graham #</th>
+                    <Th col="graham"  label="vs Graham" right />
+                    <th className="pb-2 pr-4 text-right text-gray-500">Target</th>
+                    <Th col="upside"  label="Upside"   right />
+                    <Th col="pe"      label="P/E"      right />
+                    <Th col="pb"      label="P/B"      right />
+                    <Th col="roe"     label="ROE"      right />
+                    <Th col="de"      label="D/E"      right />
+                    <Th col="eps"     label="Crec. EPS" right />
                   </tr>
                 </thead>
                 <tbody>
