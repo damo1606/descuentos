@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS, RUSSELL2000_SYMBOLS } from "@/lib/symbols"
+import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS, RUSSELL2000_SYMBOLS, QUANTUM_SYMBOLS, BIOTECH_SMALL_SYMBOLS, TECH_SMALL_SYMBOLS, CONSUMER_SMALL_SYMBOLS } from "@/lib/symbols"
 import type { StockData } from "@/lib/yahoo"
 import { scoreStock } from "@/lib/scoring"
 import type { ScoreBreakdown } from "@/lib/scoring"
@@ -80,7 +80,7 @@ export default function Home() {
   const [ran, setRan]                 = useState(false)
   const [progress, setProgress]       = useState(0)
   const [fetchedCount, setFetchedCount] = useState(0)
-  const [universe, setUniverse]       = useState<"dia" | "sp500" | "nasdaq" | "russell" | "r2000">("dia")
+  const [universe, setUniverse]       = useState<"dia" | "sp500" | "nasdaq" | "russell" | "r2000" | "quantum" | "biotech-small" | "tech-small" | "consumer-small">("dia")
   const [limit, setLimit]             = useState(50)
   const [sortBy, setSortBy]           = useState<"drop" | "graham" | "upside" | "grade">("drop")
   const [phase, setPhase]             = useState<Phase | null>(null)
@@ -118,10 +118,14 @@ export default function Home() {
     setFetchedCount(0)
 
     const symbols =
-      universe === "dia"     ? DJIA_SYMBOLS :
-      universe === "nasdaq"  ? NASDAQ100_SYMBOLS :
-      universe === "russell" ? RUSSELL_SYMBOLS :
-      universe === "r2000"   ? RUSSELL2000_SYMBOLS :
+      universe === "dia"           ? DJIA_SYMBOLS :
+      universe === "nasdaq"        ? NASDAQ100_SYMBOLS :
+      universe === "russell"       ? RUSSELL_SYMBOLS :
+      universe === "r2000"         ? RUSSELL2000_SYMBOLS :
+      universe === "quantum"       ? QUANTUM_SYMBOLS :
+      universe === "biotech-small" ? BIOTECH_SMALL_SYMBOLS :
+      universe === "tech-small"    ? TECH_SMALL_SYMBOLS :
+      universe === "consumer-small"? CONSUMER_SMALL_SYMBOLS :
       SP500_SYMBOLS.slice(0, limit)
     const results: Scored[] = []
     let done = 0
@@ -168,15 +172,28 @@ export default function Home() {
             <label className="block text-xs text-gray-400 mb-1">Universo</label>
             <select
               value={universe}
-              onChange={(e) => { setUniverse(e.target.value as "dia" | "sp500" | "nasdaq" | "russell" | "r2000"); setStocks([]); setRan(false) }}
+              onChange={(e) => { setUniverse(e.target.value as typeof universe); setStocks([]); setRan(false) }}
               className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white"
             >
-              <option value="dia">Dow Jones 30</option>
-              <option value="sp500">S&P 500</option>
-              <option value="nasdaq">Nasdaq 100</option>
-              <option value="russell">Russell 1000</option>
-              <option value="r2000">Russell 2000</option>
+              <optgroup label="Large &amp; Mid Cap">
+                <option value="dia">Dow Jones 30</option>
+                <option value="sp500">S&P 500</option>
+                <option value="nasdaq">Nasdaq 100</option>
+                <option value="russell">Russell 1000</option>
+              </optgroup>
+              <optgroup label="Small &amp; Micro Cap">
+                <option value="r2000">Russell 2000</option>
+                <option value="quantum">Quantum / DeepTech</option>
+                <option value="biotech-small">Biotech Small Cap</option>
+                <option value="tech-small">Tech Small Cap</option>
+                <option value="consumer-small">Consumo Básico Small</option>
+              </optgroup>
             </select>
+            {["r2000","quantum","biotech-small","tech-small","consumer-small"].includes(universe) && (
+              <span className="text-xs font-semibold px-2 py-1 rounded bg-yellow-900/60 border border-yellow-700 text-yellow-300">
+                Micro / Small Cap — breakpoints ajustados
+              </span>
+            )}
           </div>
 
           {universe === "sp500" && (

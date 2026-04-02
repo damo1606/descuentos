@@ -62,6 +62,39 @@ export const RUSSELL2000_SYMBOLS = [
   "GMRE","NXRT","ILPT","FCPT",
 ]
 
+// Quantum / DeepTech — empresas de frontera tecnológica (micro/small cap)
+export const QUANTUM_SYMBOLS = [
+  "IONQ","QBTS","QUBT","RGTI","ARQQ",   // Quantum computing
+  "RKLB","ACHR","JOBY",                  // Space & eVTOL
+  "PL","SPIR",                           // Satellite data
+  "SOUN","BBAI",                         // AI/Voice infra
+  "OUST","INVZ","AEVA",                  // LiDAR / autonomous
+  "FORM","CEVA",                         // Semiconductores especializados
+]
+
+// Biotech Small Cap — desarrollo clínico y especialidades médicas
+export const BIOTECH_SMALL_SYMBOLS = [
+  "PCVX","DNLI","FATE","MRUS","PTCT",
+  "KRYS","RCKT","VCEL","RYTM","RVMD",
+  "APLS","ITOS","STRO","PRME","EDIT",
+  "NTLA","CRSP","BLUE","ACRS","NBTX",
+]
+
+// Tech Small Cap — SaaS, semiconductor y cloud de mediana escala
+export const TECH_SMALL_SYMBOLS = [
+  "SPSC","HLIT","SEMR","QLYS","ALRM",
+  "WEAV","FSLY","JAMF","PAYO","LSPD",
+  "DOCN","NCNO","ASAN","ACMR","GTLB",
+  "FOUR","SLAB",
+]
+
+// Consumo Básico Small Cap — alimentos, bebidas y CPG de nicho
+export const CONSUMER_SMALL_SYMBOLS = [
+  "HAIN","MGPI","LWAY","VITL","NOMD",
+  "DNUT","PRPL","BARK","HNGR","ANDE",
+  "VLGEA","CENT","FRPT","SMPL",
+]
+
 // Russell 1000 — adicionales al S&P 500 (small/mid cap de calidad)
 export const RUSSELL_SYMBOLS = [
   "AXON","HUBS","APP","ENPH","MPWR","ENTG","PODD","TRMB","ALGN","LULU",

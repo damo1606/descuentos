@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS, RUSSELL2000_SYMBOLS } from "@/lib/symbols"
+import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS, RUSSELL2000_SYMBOLS, QUANTUM_SYMBOLS, BIOTECH_SMALL_SYMBOLS, TECH_SMALL_SYMBOLS, CONSUMER_SMALL_SYMBOLS } from "@/lib/symbols"
 import { scoreStock } from "@/lib/scoring"
 import { analyzeForward } from "@/lib/forward"
 import type { StockData } from "@/lib/yahoo"
@@ -72,13 +72,17 @@ function Metric({ label, value, good, note }: { label: string; value: string; go
   )
 }
 
-type Universe = "dia" | "sp500" | "nasdaq" | "russell" | "r2000"
-const UNIVERSES: { key: Universe; label: string; symbols: string[] }[] = [
-  { key: "dia",     label: "Dow Jones 30",  symbols: DJIA_SYMBOLS },
-  { key: "sp500",   label: "S&P 500",       symbols: SP500_SYMBOLS },
-  { key: "nasdaq",  label: "Nasdaq 100",    symbols: NASDAQ100_SYMBOLS },
-  { key: "russell", label: "Russell 1000",  symbols: RUSSELL_SYMBOLS },
-  { key: "r2000",   label: "Russell 2000",  symbols: RUSSELL2000_SYMBOLS },
+type Universe = "dia" | "sp500" | "nasdaq" | "russell" | "r2000" | "quantum" | "biotech-small" | "tech-small" | "consumer-small"
+const UNIVERSES: { key: Universe; label: string; symbols: string[]; small?: boolean }[] = [
+  { key: "dia",           label: "Dow Jones 30",         symbols: DJIA_SYMBOLS },
+  { key: "sp500",         label: "S&P 500",              symbols: SP500_SYMBOLS },
+  { key: "nasdaq",        label: "Nasdaq 100",           symbols: NASDAQ100_SYMBOLS },
+  { key: "russell",       label: "Russell 1000",         symbols: RUSSELL_SYMBOLS },
+  { key: "r2000",         label: "Russell 2000",         symbols: RUSSELL2000_SYMBOLS,         small: true },
+  { key: "quantum",       label: "Quantum / DeepTech",   symbols: QUANTUM_SYMBOLS,            small: true },
+  { key: "biotech-small", label: "Biotech Small Cap",    symbols: BIOTECH_SMALL_SYMBOLS,      small: true },
+  { key: "tech-small",    label: "Tech Small Cap",       symbols: TECH_SMALL_SYMBOLS,         small: true },
+  { key: "consumer-small",label: "Consumo Básico Small", symbols: CONSUMER_SMALL_SYMBOLS,     small: true },
 ]
 
 export default function Parte1() {
@@ -203,10 +207,22 @@ export default function Parte1() {
             <select value={universe}
               onChange={e => { setUniverse(e.target.value as Universe); setStocks([]); setRan(false) }}
               className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white">
-              {UNIVERSES.map(u => (
-                <option key={u.key} value={u.key}>{u.label} ({u.symbols.length})</option>
-              ))}
+              <optgroup label="Large &amp; Mid Cap">
+                {UNIVERSES.filter(u => !u.small).map(u => (
+                  <option key={u.key} value={u.key}>{u.label} ({u.symbols.length})</option>
+                ))}
+              </optgroup>
+              <optgroup label="Small &amp; Micro Cap">
+                {UNIVERSES.filter(u => u.small).map(u => (
+                  <option key={u.key} value={u.key}>{u.label} ({u.symbols.length})</option>
+                ))}
+              </optgroup>
             </select>
+            {UNIVERSES.find(u => u.key === universe)?.small && (
+              <span className="text-xs font-semibold px-2 py-1 rounded bg-yellow-900/60 border border-yellow-700 text-yellow-300">
+                Micro / Small Cap — breakpoints ajustados
+              </span>
+            )}
           </div>
 
           {universe === "sp500" && (

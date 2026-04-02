@@ -148,6 +148,9 @@ export default function EmpresaPage() {
               <PillarBar label="Precio / Valoración" value={score.priceScore} weight="20%" />
             </div>
             <div className="mt-3 text-xs text-gray-600">{score.sectorLabel} · {score.moatType} · CAP {score.capRange}</div>
+            {(score.capSizeLabel === "Micro Cap" || score.capSizeLabel === "Small Cap") && (
+              <div className="mt-1 text-xs font-semibold text-yellow-400">{score.capSizeLabel} — breakpoints ajustados</div>
+            )}
           </div>
 
           {/* Prospectiva */}

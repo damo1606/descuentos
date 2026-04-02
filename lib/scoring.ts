@@ -21,6 +21,9 @@ function clamp(v: number, min = 0, max = 100) {
 const OUT: [number, number, number, number] = [0, 25, 65, 100]
 
 export type ScoreBreakdown = {
+  // Tamaño de empresa
+  capSizeLabel: "Micro Cap" | "Small Cap" | "Mid Cap" | "Large Cap"
+
   // Pilar 1: Eficiencia del Capital (30%)
   roicScore: number        // ROIC — métrica principal de retorno sobre capital
   roeScore: number         // ROE — referencia secundaria
@@ -62,16 +65,40 @@ export type ScoreBreakdown = {
   dividendGrade: "Excelente" | "Bueno" | "Moderado" | "Débil" | "No aplica"
 }
 
+function scaleForCapSize(bp: [number, number, number, number], factor: number): [number, number, number, number] {
+  return [bp[0] * factor, bp[1] * factor, bp[2] * factor, bp[3] * factor]
+}
+
 export function scoreStock(s: StockData): ScoreBreakdown {
   const sector = getSectorConfig(s.sector)
+
+  // Cap size factor — small/micro caps tienen menos escala; reducimos exigencia de breakpoints
+  const capFactor =
+    s.marketCap > 0 && s.marketCap < 300e6  ? 0.70 :
+    s.marketCap > 0 && s.marketCap < 2e9    ? 0.85 : 1.0
+
+  const capSizeLabel: ScoreBreakdown["capSizeLabel"] =
+    s.marketCap < 300e6  ? "Micro Cap" :
+    s.marketCap < 2e9    ? "Small Cap" :
+    s.marketCap < 10e9   ? "Mid Cap"   : "Large Cap"
+
+  // Ajustar breakpoints de márgenes y ROIC para small/micro cap
+  const adjSector = capFactor < 1 ? {
+    ...sector,
+    grossMarginBp:     scaleForCapSize(sector.grossMarginBp,     capFactor),
+    operatingMarginBp: scaleForCapSize(sector.operatingMarginBp, capFactor),
+    netMarginBp:       scaleForCapSize(sector.netMarginBp,       capFactor),
+    roicBp:            scaleForCapSize(sector.roicBp,            capFactor),
+    roeBp:             scaleForCapSize(sector.roeBp,             capFactor),
+  } : sector
 
   // ── Pilar 1: Eficiencia del Capital ──────────────────────────────────────
   // ROIC: el mejor indicador de si el negocio crea valor económico real
   // ROIC > WACC → moat real. Breakpoints según sector (Damodaran)
-  const roicScore = s.hasROIC ? clamp(lerp(s.roic * 100, sector.roicBp, OUT)) : 50
+  const roicScore = s.hasROIC ? clamp(lerp(s.roic * 100, adjSector.roicBp, OUT)) : 50
 
   // ROE: referencia secundaria — puede inflarse con deuda, por eso ROIC es primario
-  const roeScore = clamp(lerp(s.roe * 100, sector.roeBp, OUT))
+  const roeScore = clamp(lerp(s.roe * 100, adjSector.roeBp, OUT))
 
   // ROA: eficiencia usando todos los activos, sin trampa del apalancamiento
   const roaScore = clamp(lerp(s.roa * 100, [0, 5, 10, 18], OUT))
@@ -88,19 +115,19 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   // ── Pilar 2: Ventaja Competitiva (Moat) — breakpoints sectoriales ─────────
   // Gross Margin: pricing power. Breakpoints distintos por sector (Damodaran)
   // Un retailer con 35% es excelente. Un SaaS con 35% es mediocre.
-  const grossMarginScore = clamp(lerp(s.grossMargin * 100, sector.grossMarginBp, OUT))
+  const grossMarginScore = clamp(lerp(s.grossMargin * 100, adjSector.grossMarginBp, OUT))
 
   // Operating Margin: eficiencia operativa después de G&A y R&D
-  const operatingMarginScore = clamp(lerp(s.operatingMargin * 100, sector.operatingMarginBp, OUT))
+  const operatingMarginScore = clamp(lerp(s.operatingMargin * 100, adjSector.operatingMarginBp, OUT))
 
   // Net Margin: resultado final después de impuestos e intereses
-  const netMarginScore = clamp(lerp(s.netMargin * 100, sector.netMarginBp, OUT))
+  const netMarginScore = clamp(lerp(s.netMargin * 100, adjSector.netMarginBp, OUT))
 
   // Pesos también sectoriales — financieros: gross margin casi no importa
   const moatScore = clamp(
-    grossMarginScore    * sector.grossMarginWeight +
-    operatingMarginScore * sector.operatingMarginWeight +
-    netMarginScore      * sector.netMarginWeight
+    grossMarginScore    * adjSector.grossMarginWeight +
+    operatingMarginScore * adjSector.operatingMarginWeight +
+    netMarginScore      * adjSector.netMarginWeight
   )
 
   // ── Pilar 3: Solidez Financiera ───────────────────────────────────────────
@@ -215,6 +242,7 @@ export function scoreStock(s: StockData): ScoreBreakdown {
     operatingMarginScore: Math.round(operatingMarginScore),
     netMarginScore:       Math.round(netMarginScore),
     moatScore:            Math.round(moatScore),
+    capSizeLabel,
     sectorLabel:          sector.label,
     moatType:             sector.moatType,
     capRange:             sector.capRange,
