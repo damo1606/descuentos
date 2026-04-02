@@ -117,6 +117,14 @@ export default function EmpresaPage() {
           </div>
         </div>
 
+        {/* Buy Ready banner */}
+        {score.buyReady && (
+          <div className="bg-emerald-900/40 border border-emerald-700 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
+            <span className="text-emerald-400 text-lg font-black">Compra</span>
+            <span className="text-emerald-300 text-sm">Buy Score <strong>{score.buyScore}</strong> — calidad, precio y descuento de mercado confluyen</span>
+          </div>
+        )}
+
         {/* Veredicto */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6">
           <p className="text-gray-300 text-sm">{score.verdict}</p>

@@ -54,7 +54,9 @@ export type ScoreBreakdown = {
 
   // Totales
   qualityScore: number     // Pilar 1+2+3 (0-100)
-  finalScore: number       // 80% quality + 20% price (0-100)
+  finalScore: number       // 60% quality + 40% price (0-100)
+  buyScore: number         // 55% quality + 45% price — score de entrada
+  buyReady: boolean        // qualityScore>=65 && priceScore>=45 && dropFrom52w<=-10
   grade: "A+" | "A" | "B" | "C" | "D" | "F"
   verdict: string
   strengths: string[]
@@ -162,9 +164,21 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   )
 
   const finalScore = clamp(
-    qualityScore * 0.80 +
-    priceScore   * 0.20
+    qualityScore * 0.60 +
+    priceScore   * 0.40
   )
+
+  // ── Buy Score (Opción B) ──────────────────────────────────────────────────
+  // Score equilibrado para detectar momento de entrada: calidad + precio juntos
+  const buyScore = clamp(
+    qualityScore * 0.55 +
+    priceScore   * 0.45
+  )
+  // Lista para comprar cuando calidad, precio Y descuento de mercado confluyen
+  const buyReady =
+    qualityScore >= 65 &&
+    priceScore   >= 45 &&
+    s.dropFrom52w <= -10
 
   // ── Grade ─────────────────────────────────────────────────────────────────
   const grade =
@@ -254,6 +268,8 @@ export function scoreStock(s: StockData): ScoreBreakdown {
     priceScore:           Math.round(priceScore),
     qualityScore:         Math.round(qualityScore),
     finalScore:           Math.round(finalScore),
+    buyScore:             Math.round(buyScore),
+    buyReady,
     grade,
     verdict,
     strengths:  strengths.slice(0, 4),

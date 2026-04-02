@@ -82,7 +82,7 @@ export default function Home() {
   const [fetchedCount, setFetchedCount] = useState(0)
   const [universe, setUniverse]       = useState<"dia" | "sp500" | "nasdaq" | "russell" | "r2000" | "quantum" | "biotech-small" | "tech-small" | "consumer-small">("dia")
   const [limit, setLimit]             = useState(50)
-  const [sortBy, setSortBy]           = useState<"drop" | "graham" | "upside" | "grade">("drop")
+  const [sortBy, setSortBy]           = useState<"drop" | "graham" | "upside" | "grade" | "buy">("drop")
   const [phase, setPhase]             = useState<Phase | null>(null)
   const [phaseConf, setPhaseConf]     = useState<number>(0)
   const [filterByCycle, setFilterByCycle] = useState(false)
@@ -144,6 +144,7 @@ export default function Home() {
       if (sortBy === "drop")   return a.dropFrom52w - b.dropFrom52w
       if (sortBy === "graham") return b.discountToGraham - a.discountToGraham
       if (sortBy === "upside") return b.upsideToTarget - a.upsideToTarget
+      if (sortBy === "buy")    return b.score.buyScore - a.score.buyScore
       if (sortBy === "grade") {
         const ORDER = ["F","D","C","B","A","A+"]
         return ORDER.indexOf(b.score.grade) - ORDER.indexOf(a.score.grade)
@@ -216,6 +217,7 @@ export default function Home() {
               <option value="graham">Mayor descuento vs Graham</option>
               <option value="upside">Mayor upside a target analistas</option>
               <option value="grade">Mayor grado de calidad</option>
+              <option value="buy">Mayor score de compra</option>
             </select>
           </div>
 
@@ -287,6 +289,7 @@ export default function Home() {
                   <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
                     <th className="pb-2 pr-6">Empresa</th>
                     <th className="pb-2 pr-4">Grado</th>
+                    <th className="pb-2 pr-4 text-right">Compra</th>
                     <th className="pb-2 pr-4">Sector</th>
                     <th className="pb-2 pr-4 text-right">Precio</th>
                     <th className="pb-2 pr-4 text-right">Máx 52w</th>
@@ -315,6 +318,12 @@ export default function Home() {
                         </div>
                       </td>
                       <td className="py-3 pr-4"><GradeBadge grade={s.score.grade} /></td>
+                      <td className="py-3 pr-4 text-right">
+                        {s.score.buyReady
+                          ? <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-700 text-white">Compra {s.score.buyScore}</span>
+                          : <span className="font-mono text-xs text-gray-500">{s.score.buyScore}</span>
+                        }
+                      </td>
                       <td className="py-3 pr-4 text-xs text-gray-400 max-w-[100px] truncate">{s.sector}</td>
                       <td className="py-3 pr-4 text-right font-mono">${s.currentPrice.toFixed(2)}</td>
                       <td className="py-3 pr-4 text-right font-mono text-gray-400">${s.high52w.toFixed(2)}</td>
