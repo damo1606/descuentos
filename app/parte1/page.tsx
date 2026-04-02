@@ -157,8 +157,8 @@ export default function Parte1() {
           <div className="flex gap-4 shrink-0 flex-wrap justify-end">
             <Link href="/ciclos"       className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Ciclos →</Link>
             <Link href="/sectores"     className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Sectores →</Link>
-            <Link href="/prospectiva"  className="text-sm text-purple-500 hover:text-purple-300 transition-colors">Prospectiva →</Link>
             <Link href="/"             className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Screener →</Link>
+            <Link href="/prospectiva"  className="text-sm text-purple-500 hover:text-purple-300 transition-colors">Prospectiva →</Link>
           </div>
         </div>
 

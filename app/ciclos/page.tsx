@@ -236,9 +236,9 @@ export default function Ciclos() {
           </div>
           <div className="flex gap-3 shrink-0 flex-wrap justify-end text-sm">
             <Link href="/sectores"    className="text-gray-500 hover:text-gray-300 transition-colors">Sectores →</Link>
+            <Link href="/"            className="text-gray-500 hover:text-gray-300 transition-colors">Screener →</Link>
             <Link href="/parte1"      className="text-gray-500 hover:text-gray-300 transition-colors">Valoración →</Link>
             <Link href="/prospectiva" className="text-purple-500 hover:text-purple-300 transition-colors">Prospectiva →</Link>
-            <Link href="/"            className="text-gray-500 hover:text-gray-300 transition-colors">Screener →</Link>
           </div>
         </div>
       </div>
