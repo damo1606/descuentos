@@ -134,12 +134,6 @@ export default function Prospectiva() {
             <h1 className="text-3xl font-bold text-white">Prospectiva del Negocio</h1>
             <p className="text-gray-400 mt-1">Análisis de trayectoria futura — más allá de los números de hoy</p>
           </div>
-          <div className="flex gap-4 shrink-0 flex-wrap justify-end">
-            <Link href="/ciclos"   className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Ciclos →</Link>
-            <Link href="/sectores" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Sectores →</Link>
-            <Link href="/"         className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Screener →</Link>
-            <Link href="/parte1"   className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Valoración →</Link>
-          </div>
         </div>
 
         {/* Explicación */}

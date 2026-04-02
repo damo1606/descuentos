@@ -93,17 +93,9 @@ export default function Home() {
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="max-w-full mx-auto px-2">
 
-        <div className="flex items-center gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-white">Descuentos</h1>
-            <p className="text-gray-400 mt-1">Empresas de calidad castigadas por el mercado — Yahoo Finance</p>
-          </div>
-          <div className="ml-auto flex gap-2 flex-wrap justify-end">
-            <Link href="/ciclos"        className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700">Ciclos →</Link>
-            <Link href="/sectores"      className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700">Sectores →</Link>
-            <Link href="/parte1"        className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700">Valoración →</Link>
-            <Link href="/prospectiva"   className="bg-purple-900 hover:bg-purple-800 text-purple-200 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-purple-800">Prospectiva →</Link>
-          </div>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-white">Descuentos</h1>
+          <p className="text-gray-400 mt-1">Empresas de calidad castigadas por el mercado — Yahoo Finance</p>
         </div>
 
         {/* Filtros */}
