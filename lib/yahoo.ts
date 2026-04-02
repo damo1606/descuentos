@@ -120,6 +120,7 @@ export type StockData = {
   totalDebt: number
   totalCash: number
   roic: number            // NOPAT / Invested Capital — métrica clave de moat real
+  hasROIC: boolean        // false cuando los datos upstream son insuficientes para calcular ROIC
 
   // Dividendos
   dividendRate: number          // Dividendo anual por acción ($/año)
@@ -292,10 +293,17 @@ export async function fetchStockData(symbol: string): Promise<StockData | null> 
         const totalDebt  = financial.totalDebt?.raw ?? 0
         const totalCash  = financial.totalCash?.raw ?? 0
         const bookEquity = (stats.bookValue?.raw ?? 0) * (stats.sharesOutstanding?.raw ?? 0)
-        const nopat      = revenue * opMargin * (1 - 0.21)      // tasa corporativa EEUU ~21%
+        const nopat      = revenue * opMargin * (1 - 0.21)
         const netDebt    = Math.max(totalDebt - totalCash, 0)
         const invested   = bookEquity + netDebt
         return invested > 0 && nopat > 0 ? nopat / invested : 0
+      })(),
+      hasROIC: (() => {
+        const revenue  = financial.totalRevenue?.raw
+        const opMargin = financial.operatingMargins?.raw
+        const equity   = stats.bookValue?.raw
+        const shares   = stats.sharesOutstanding?.raw
+        return !!(revenue && opMargin !== undefined && equity && shares)
       })(),
 
       // ── Dividendos ───────────────────────────────────────────────────────

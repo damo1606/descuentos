@@ -1,5 +1,7 @@
-// Perfiles sectoriales basados en datos empíricos de Damodaran (enero 2024)
+// Perfiles sectoriales basados en datos empíricos de Damodaran (enero 2025)
 // Fuente: pages.stern.nyu.edu/~adamodar/
+// Actualizado: abril 2026 — refleja impacto IA en Tech/Comms, GLP-1 en Healthcare,
+//              tasas altas en Financials, superciclo capex en Industrials
 //
 // Breakpoints: [terrible, mediocre, bueno, excelente] → output [0, 25, 65, 100]
 // Todos los valores en % (ej: 40 = 40%)
@@ -28,13 +30,13 @@ const SECTORS: SectorConfig[] = [
     yahooNames: ["Technology"],
     moatType: "Switching costs + Network effects",
     capRange: "10–20 años",
-    // Software puro → márgenes muy altos. Gross > 65% = excelente
-    grossMarginBp:     [20, 45, 65, 85],
-    operatingMarginBp: [ 0, 10, 22, 35],
-    netMarginBp:       [ 0,  8, 18, 30],
-    // ROIC alto porque requiere poco capital físico
-    roicBp:            [ 0,  8, 18, 35],
-    roeBp:             [ 0, 10, 22, 40],
+    // IA elevó el techo de márgenes: hyperscalers + SaaS puro > 85% gross
+    grossMarginBp:     [20, 48, 68, 88],
+    operatingMarginBp: [ 0, 10, 24, 38],
+    netMarginBp:       [ 0,  8, 20, 33],
+    // ROIC muy alto post-IA — líderes generan >40% ROIC
+    roicBp:            [ 0,  8, 20, 40],
+    roeBp:             [ 0, 10, 24, 45],
     grossMarginWeight:     0.45,
     operatingMarginWeight: 0.35,
     netMarginWeight:       0.20,
@@ -44,12 +46,12 @@ const SECTORS: SectorConfig[] = [
     yahooNames: ["Healthcare"],
     moatType: "Patentes + Aprobación regulatoria (FDA/EMA)",
     capRange: "7–20 años (vida útil de patente)",
-    // Farma tiene márgenes altos protegidos por patentes
-    grossMarginBp:     [20, 45, 65, 85],
-    operatingMarginBp: [ 0, 10, 20, 32],
-    netMarginBp:       [ 0,  8, 16, 28],
-    roicBp:            [ 0,  6, 14, 28],
-    roeBp:             [ 0, 10, 20, 35],
+    // GLP-1 (Novo, Lilly) elevó el techo — farmacéutica líder tiene márgenes excepcionalmente altos
+    grossMarginBp:     [20, 48, 68, 88],
+    operatingMarginBp: [ 0, 10, 22, 36],
+    netMarginBp:       [ 0,  8, 18, 32],
+    roicBp:            [ 0,  7, 16, 32],
+    roeBp:             [ 0, 11, 22, 40],
     // Operating margin pesa igual que gross — R&D es clave
     grossMarginWeight:     0.40,
     operatingMarginWeight: 0.40,
@@ -60,14 +62,13 @@ const SECTORS: SectorConfig[] = [
     yahooNames: ["Financial Services"],
     moatType: "Escala + Regulación + Red de distribución",
     capRange: "10–20 años",
-    // Gross margin no aplica igual — NIM (net interest margin) es la métrica real
-    // Usamos como proxy pero con peso muy bajo
-    grossMarginBp:     [ 0, 20, 40, 60],
-    operatingMarginBp: [ 0, 15, 28, 40],
-    netMarginBp:       [ 0, 12, 22, 35],
-    // Bancos tienen ROIC/ROE estructuralmente más bajos — usan mucho apalancamiento
-    roicBp:            [ 0,  6, 12, 20],
-    roeBp:             [ 0,  8, 14, 22],
+    // Tasas altas 2022-2025 mejoraron NIM y rentabilidad bancaria estructuralmente
+    grossMarginBp:     [ 0, 22, 44, 64],
+    operatingMarginBp: [ 0, 18, 32, 46],
+    netMarginBp:       [ 0, 14, 25, 38],
+    // ROE bancario mejoró con tasas altas — JP Morgan, GS superan 15%
+    roicBp:            [ 0,  7, 14, 24],
+    roeBp:             [ 0, 10, 16, 26],
     // Operating y net margin pesan más que gross en financieros
     grossMarginWeight:     0.15,
     operatingMarginWeight: 0.45,
@@ -108,12 +109,12 @@ const SECTORS: SectorConfig[] = [
     yahooNames: ["Industrials"],
     moatType: "Cost advantage + Escala operativa + Contratos a largo plazo",
     capRange: "5–15 años",
-    // Manufactura/defensa: márgenes medianos pero predecibles
-    grossMarginBp:     [10, 22, 35, 50],
-    operatingMarginBp: [ 0,  7, 14, 22],
-    netMarginBp:       [ 0,  5, 10, 18],
-    roicBp:            [ 0,  7, 14, 24],
-    roeBp:             [ 0, 10, 18, 30],
+    // Superciclo capex (reshoring, defensa, infraestructura) mejoró márgenes
+    grossMarginBp:     [10, 24, 38, 54],
+    operatingMarginBp: [ 0,  8, 16, 26],
+    netMarginBp:       [ 0,  5, 11, 20],
+    roicBp:            [ 0,  8, 16, 28],
+    roeBp:             [ 0, 11, 20, 34],
     // Operating margin pesa más — eficiencia operativa es el driver
     grossMarginWeight:     0.35,
     operatingMarginWeight: 0.45,
@@ -124,12 +125,12 @@ const SECTORS: SectorConfig[] = [
     yahooNames: ["Energy"],
     moatType: "Recursos naturales + Integración vertical",
     capRange: "Variable — depende del ciclo commodity",
-    // Márgenes muy cíclicos — un año bueno no significa moat
-    grossMarginBp:     [10, 22, 38, 55],
-    operatingMarginBp: [ 0,  8, 16, 25],
-    netMarginBp:       [ 0,  5, 12, 20],
-    roicBp:            [ 0,  5, 12, 20],
-    roeBp:             [ 0,  8, 16, 28],
+    // Márgenes cíclicos pero con mejora estructural post-2022 (integrados/LNG)
+    grossMarginBp:     [10, 25, 42, 60],
+    operatingMarginBp: [ 0,  9, 18, 28],
+    netMarginBp:       [ 0,  6, 13, 22],
+    roicBp:            [ 0,  6, 14, 24],
+    roeBp:             [ 0,  9, 18, 30],
     grossMarginWeight:     0.35,
     operatingMarginWeight: 0.45,
     netMarginWeight:       0.20,
@@ -139,12 +140,12 @@ const SECTORS: SectorConfig[] = [
     yahooNames: ["Communication Services"],
     moatType: "Network effects + Switching costs + Contenido exclusivo",
     capRange: "10–25 años",
-    // Google, Meta, Netflix: márgenes altos por escala digital
-    grossMarginBp:     [15, 35, 55, 75],
-    operatingMarginBp: [ 0, 10, 22, 35],
-    netMarginBp:       [ 0,  8, 18, 30],
-    roicBp:            [ 0,  7, 15, 28],
-    roeBp:             [ 0, 10, 20, 35],
+    // Meta "año de eficiencia" + Google Ads recovery — techo de márgenes subió
+    grossMarginBp:     [20, 40, 60, 80],
+    operatingMarginBp: [ 0, 12, 26, 40],
+    netMarginBp:       [ 0, 10, 22, 36],
+    roicBp:            [ 0,  8, 18, 35],
+    roeBp:             [ 0, 12, 24, 42],
     grossMarginWeight:     0.45,
     operatingMarginWeight: 0.35,
     netMarginWeight:       0.20,

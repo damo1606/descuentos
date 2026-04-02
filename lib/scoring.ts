@@ -68,7 +68,7 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   // ── Pilar 1: Eficiencia del Capital ──────────────────────────────────────
   // ROIC: el mejor indicador de si el negocio crea valor económico real
   // ROIC > WACC → moat real. Breakpoints según sector (Damodaran)
-  const roicScore = clamp(lerp(s.roic * 100, sector.roicBp, OUT))
+  const roicScore = s.hasROIC ? clamp(lerp(s.roic * 100, sector.roicBp, OUT)) : 50
 
   // ROE: referencia secundaria — puede inflarse con deuda, por eso ROIC es primario
   const roeScore = clamp(lerp(s.roe * 100, sector.roeBp, OUT))

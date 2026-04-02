@@ -1,15 +1,37 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS, RUSSELL2000_SYMBOLS } from "@/lib/symbols"
 import type { StockData } from "@/lib/yahoo"
+import { scoreStock } from "@/lib/scoring"
+import type { ScoreBreakdown } from "@/lib/scoring"
 
-async function fetchStock(symbol: string): Promise<StockData | null> {
+type Scored = StockData & { score: ScoreBreakdown }
+
+type Phase = "recovery" | "expansion" | "late" | "recession"
+
+// Sectores favorecidos (score >= 7) por fase — Yahoo Finance names
+const PHASE_SECTORS: Record<Phase, string[]> = {
+  recovery:  ["Financial Services", "Consumer Cyclical", "Industrials", "Real Estate"],
+  expansion: ["Technology", "Financial Services", "Consumer Cyclical", "Industrials", "Communication Services", "Basic Materials"],
+  late:      ["Energy", "Basic Materials", "Healthcare", "Consumer Defensive"],
+  recession: ["Healthcare", "Consumer Defensive", "Utilities"],
+}
+
+const PHASE_LABELS: Record<Phase, { label: string; color: string; badge: string }> = {
+  recovery:  { label: "Recuperación", color: "text-blue-400",   badge: "bg-blue-900/60 border-blue-800 text-blue-200" },
+  expansion: { label: "Expansión",    color: "text-green-400",  badge: "bg-green-900/60 border-green-800 text-green-200" },
+  late:      { label: "Desaceleración", color: "text-amber-400", badge: "bg-amber-900/60 border-amber-800 text-amber-200" },
+  recession: { label: "Recesión",     color: "text-red-400",    badge: "bg-red-900/60 border-red-800 text-red-200" },
+}
+
+async function fetchStock(symbol: string): Promise<Scored | null> {
   try {
     const res = await fetch(`/api/stock/${symbol}`)
     if (!res.ok) return null
-    return await res.json()
+    const data: StockData = await res.json()
+    return { ...data, score: scoreStock(data) }
   } catch {
     return null
   }
@@ -41,15 +63,52 @@ function GrahamBadge({ value }: { value: number }) {
   return <span className={`font-bold font-mono ${color}`}>{pct(value)}</span>
 }
 
+function GradeBadge({ grade }: { grade: string }) {
+  const color =
+    grade === "A+" ? "bg-emerald-500 text-white" :
+    grade === "A"  ? "bg-green-600 text-white" :
+    grade === "B"  ? "bg-blue-600 text-white" :
+    grade === "C"  ? "bg-yellow-600 text-white" :
+    grade === "D"  ? "bg-orange-600 text-white" :
+    "bg-red-800 text-white"
+  return <span className={`text-xs font-black px-2 py-0.5 rounded ${color}`}>{grade}</span>
+}
+
 export default function Home() {
-  const [stocks, setStocks]           = useState<StockData[]>([])
+  const [stocks, setStocks]           = useState<Scored[]>([])
   const [loading, setLoading]         = useState(false)
   const [ran, setRan]                 = useState(false)
   const [progress, setProgress]       = useState(0)
   const [fetchedCount, setFetchedCount] = useState(0)
   const [universe, setUniverse]       = useState<"dia" | "sp500" | "nasdaq" | "russell" | "r2000">("dia")
   const [limit, setLimit]             = useState(50)
-  const [sortBy, setSortBy]           = useState<"drop" | "graham" | "upside">("drop")
+  const [sortBy, setSortBy]           = useState<"drop" | "graham" | "upside" | "grade">("drop")
+  const [phase, setPhase]             = useState<Phase | null>(null)
+  const [phaseConf, setPhaseConf]     = useState<number>(0)
+  const [filterByCycle, setFilterByCycle] = useState(false)
+  const [watchlist, setWatchlist]     = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set()
+    try { return new Set(JSON.parse(localStorage.getItem("descuentos-watchlist") ?? "[]")) } catch { return new Set() }
+  })
+  const [showWatchlist, setShowWatchlist] = useState(false)
+
+  function toggleWatch(symbol: string) {
+    setWatchlist(prev => {
+      const next = new Set(prev)
+      next.has(symbol) ? next.delete(symbol) : next.add(symbol)
+      localStorage.setItem("descuentos-watchlist", JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  useEffect(() => {
+    fetch("/api/macro")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.phase) { setPhase(d.phase.phase); setPhaseConf(d.phase.confidence) }
+      })
+      .catch(() => {})
+  }, [])
 
   async function runScreener() {
     setLoading(true)
@@ -64,7 +123,7 @@ export default function Home() {
       universe === "russell" ? RUSSELL_SYMBOLS :
       universe === "r2000"   ? RUSSELL2000_SYMBOLS :
       SP500_SYMBOLS.slice(0, limit)
-    const results: StockData[] = []
+    const results: Scored[] = []
     let done = 0
 
     const batchSize = 5
@@ -78,9 +137,13 @@ export default function Home() {
     }
 
     const sorted = [...results].sort((a, b) => {
-      if (sortBy === "drop")    return a.dropFrom52w - b.dropFrom52w
-      if (sortBy === "graham")  return b.discountToGraham - a.discountToGraham
-      if (sortBy === "upside")  return b.upsideToTarget - a.upsideToTarget
+      if (sortBy === "drop")   return a.dropFrom52w - b.dropFrom52w
+      if (sortBy === "graham") return b.discountToGraham - a.discountToGraham
+      if (sortBy === "upside") return b.upsideToTarget - a.upsideToTarget
+      if (sortBy === "grade") {
+        const ORDER = ["F","D","C","B","A","A+"]
+        return ORDER.indexOf(b.score.grade) - ORDER.indexOf(a.score.grade)
+      }
       return 0
     })
 
@@ -135,8 +198,38 @@ export default function Home() {
               <option value="drop">Mayor caída desde 52w</option>
               <option value="graham">Mayor descuento vs Graham</option>
               <option value="upside">Mayor upside a target analistas</option>
+              <option value="grade">Mayor grado de calidad</option>
             </select>
           </div>
+
+          {phase && (
+            <div className="flex items-center gap-2">
+              <label className="block text-xs text-gray-400 mb-1 w-full">Ciclo</label>
+              <div className="flex items-center gap-2 mt-[-4px]">
+                <span className={`text-xs font-semibold border px-2 py-1 rounded ${PHASE_LABELS[phase].badge}`}>
+                  {PHASE_LABELS[phase].label} {phaseConf}%
+                </span>
+                <button
+                  onClick={() => setFilterByCycle(v => !v)}
+                  className={`text-xs px-2 py-1 rounded border transition-colors ${filterByCycle ? "bg-blue-700 border-blue-600 text-white" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200"}`}
+                >
+                  {filterByCycle ? "✓ Filtrado" : "Filtrar"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {watchlist.size > 0 && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Watchlist</label>
+              <button
+                onClick={() => setShowWatchlist(v => !v)}
+                className={`text-xs px-3 py-1.5 rounded border transition-colors ${showWatchlist ? "bg-yellow-700 border-yellow-600 text-white" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200"}`}
+              >
+                ★ {watchlist.size} guardadas{showWatchlist ? " (mostrando)" : ""}
+              </button>
+            </div>
+          )}
 
           <button onClick={runScreener} disabled={loading}
             className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-blue-400 text-white font-semibold px-5 py-2 rounded-lg transition-colors">
@@ -159,16 +252,24 @@ export default function Home() {
         )}
 
         {/* Tabla */}
-        {stocks.length > 0 && (
+        {stocks.length > 0 && (() => {
+          const filtered = filterByCycle && phase
+            ? stocks.filter(s => PHASE_SECTORS[phase].includes(s.sector))
+            : stocks
+          const displayed = showWatchlist
+            ? filtered.filter(s => watchlist.has(s.symbol))
+            : filtered
+          return (
           <>
             <div className="text-sm text-gray-400 mb-3">
-              {stocks.length} empresas consultadas
+              {displayed.length} empresas{filterByCycle && phase ? ` en sectores favorecidos (${PHASE_LABELS[phase].label})` : " consultadas"}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm whitespace-nowrap">
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
                     <th className="pb-2 pr-6">Empresa</th>
+                    <th className="pb-2 pr-4">Grado</th>
                     <th className="pb-2 pr-4">Sector</th>
                     <th className="pb-2 pr-4 text-right">Precio</th>
                     <th className="pb-2 pr-4 text-right">Máx 52w</th>
@@ -185,12 +286,18 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {stocks.map((s) => (
+                  {displayed.map((s) => (
                     <tr key={s.symbol} className="border-b border-gray-800/50 hover:bg-gray-900/50 transition-colors">
                       <td className="py-3 pr-6">
-                        <div className="font-bold text-white">{s.symbol}</div>
-                        <div className="text-xs text-gray-400 max-w-[160px] truncate">{s.company}</div>
+                        <div className="flex items-start gap-2">
+                          <button onClick={() => toggleWatch(s.symbol)} className={`mt-0.5 text-sm leading-none transition-colors ${watchlist.has(s.symbol) ? "text-yellow-400" : "text-gray-700 hover:text-gray-400"}`}>★</button>
+                          <Link href={`/empresa/${s.symbol}`} className="hover:opacity-80 transition-opacity">
+                            <div className="font-bold text-white">{s.symbol}</div>
+                            <div className="text-xs text-gray-400 max-w-[160px] truncate">{s.company}</div>
+                          </Link>
+                        </div>
                       </td>
+                      <td className="py-3 pr-4"><GradeBadge grade={s.score.grade} /></td>
                       <td className="py-3 pr-4 text-xs text-gray-400 max-w-[100px] truncate">{s.sector}</td>
                       <td className="py-3 pr-4 text-right font-mono">${s.currentPrice.toFixed(2)}</td>
                       <td className="py-3 pr-4 text-right font-mono text-gray-400">${s.high52w.toFixed(2)}</td>
@@ -220,7 +327,8 @@ export default function Home() {
               </table>
             </div>
           </>
-        )}
+          )
+        })()}
       </div>
     </main>
   )
