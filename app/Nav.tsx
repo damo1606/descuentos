@@ -9,6 +9,7 @@ const PAGES = [
   { href: "/",            label: "Screener" },
   { href: "/parte1",      label: "Valoración" },
   { href: "/prospectiva", label: "Prospectiva" },
+  { href: "/portafolio",  label: "Portafolio" },
 ]
 
 export function Nav() {

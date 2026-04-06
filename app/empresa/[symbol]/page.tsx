@@ -7,6 +7,7 @@ import { scoreStock } from "@/lib/scoring"
 import type { ScoreBreakdown } from "@/lib/scoring"
 import { analyzeForward } from "@/lib/forward"
 import type { ForwardAnalysis } from "@/lib/forward"
+import { addPosition, addWatch, addAlert, isWatching, getPortfolio } from "@/lib/portfolio"
 
 type FullData = StockData & { score: ScoreBreakdown; forward: ForwardAnalysis }
 
@@ -56,6 +57,14 @@ export default function EmpresaPage() {
   const [data, setData] = useState<FullData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [inPortfolio, setInPortfolio] = useState(false)
+  const [inWatch, setInWatch]         = useState(false)
+  const [actionDone, setActionDone]   = useState<string | null>(null)
+
+  useEffect(() => {
+    setInPortfolio(getPortfolio().some(e => e.symbol === symbol))
+    setInWatch(isWatching(symbol))
+  }, [symbol])
 
   useEffect(() => {
     setLoading(true)
@@ -115,6 +124,43 @@ export default function EmpresaPage() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Acciones rápidas */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          <button
+            onClick={() => {
+              addPosition({ symbol, company: data.company, qty: 1, buyPrice: data.currentPrice, buyDate: new Date().toISOString().slice(0,10) })
+              setInPortfolio(true)
+              setActionDone("Agregado al portafolio")
+              setTimeout(() => setActionDone(null), 2500)
+            }}
+            className={`text-sm px-4 py-1.5 rounded-lg border font-medium transition-colors ${inPortfolio ? "border-blue-700 text-blue-400" : "border-gray-700 text-gray-400 hover:border-blue-700 hover:text-blue-300"}`}>
+            {inPortfolio ? "✓ En portafolio" : "＋ Portafolio"}
+          </button>
+          <button
+            onClick={() => {
+              addWatch({ symbol, company: data.company })
+              setInWatch(true)
+              setActionDone("Agregado a seguimiento")
+              setTimeout(() => setActionDone(null), 2500)
+            }}
+            disabled={inWatch}
+            className={`text-sm px-4 py-1.5 rounded-lg border font-medium transition-colors ${inWatch ? "border-yellow-700 text-yellow-400" : "border-gray-700 text-gray-400 hover:border-yellow-700 hover:text-yellow-300"}`}>
+            {inWatch ? "✓ En seguimiento" : "＋ Seguimiento"}
+          </button>
+          <button
+            onClick={() => {
+              addAlert({ symbol, type: "price_below", threshold: +(data.currentPrice * 0.9).toFixed(2), label: `${symbol} < $${(data.currentPrice * 0.9).toFixed(2)}`, active: true })
+              setActionDone("Alerta creada (precio −10%)")
+              setTimeout(() => setActionDone(null), 2500)
+            }}
+            className="text-sm px-4 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-orange-700 hover:text-orange-300 font-medium transition-colors">
+            ＋ Alerta
+          </button>
+          {actionDone && (
+            <span className="text-sm text-green-400 px-3 py-1.5">{actionDone}</span>
+          )}
         </div>
 
         {/* Buy Ready banner */}
