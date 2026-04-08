@@ -11,6 +11,7 @@ const PAGES = [
   { href: "/parte1",      label: "Valoración" },
   { href: "/prospectiva", label: "Prospectiva" },
   { href: "/portafolio",  label: "Portafolio" },
+  { href: "/senales",     label: "Señales" },
 ]
 
 export function Nav() {

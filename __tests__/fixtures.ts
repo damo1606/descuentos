@@ -59,6 +59,8 @@ export const BASE: StockData = {
   roic: 0.22,
   hasROIC: true,
 
+  heldPercentInsiders: 0.08,   // 8% — management comprometido
+
   dividendRate: 0,
   payoutRatio: 0,
   fiveYearAvgYield: 0,

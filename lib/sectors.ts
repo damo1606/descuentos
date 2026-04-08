@@ -18,6 +18,8 @@ export type SectorConfig = {
   // Breakpoints de retorno de capital (en %)
   roicBp:            [number, number, number, number]
   roeBp:             [number, number, number, number]
+  // Breakpoints de crecimiento de revenue (en %)
+  revenueGrowthBp:   [number, number, number, number]
   // Pesos del pilar Moat para este sector (deben sumar 1.0)
   grossMarginWeight:     number
   operatingMarginWeight: number
@@ -37,6 +39,7 @@ const SECTORS: SectorConfig[] = [
     // ROIC muy alto post-IA — líderes generan >40% ROIC
     roicBp:            [ 0,  8, 20, 40],
     roeBp:             [ 0, 10, 24, 45],
+    revenueGrowthBp:   [ 0,  5, 15, 25],
     grossMarginWeight:     0.45,
     operatingMarginWeight: 0.35,
     netMarginWeight:       0.20,
@@ -52,6 +55,7 @@ const SECTORS: SectorConfig[] = [
     netMarginBp:       [ 0,  8, 18, 32],
     roicBp:            [ 0,  7, 16, 32],
     roeBp:             [ 0, 11, 22, 40],
+    revenueGrowthBp:   [ 0,  4, 12, 22],
     // Operating margin pesa igual que gross — R&D es clave
     grossMarginWeight:     0.40,
     operatingMarginWeight: 0.40,
@@ -69,6 +73,7 @@ const SECTORS: SectorConfig[] = [
     // ROE bancario mejoró con tasas altas — JP Morgan, GS superan 15%
     roicBp:            [ 0,  7, 14, 24],
     roeBp:             [ 0, 10, 16, 26],
+    revenueGrowthBp:   [ 0,  3,  8, 14],
     // Operating y net margin pesan más que gross en financieros
     grossMarginWeight:     0.15,
     operatingMarginWeight: 0.45,
@@ -85,6 +90,7 @@ const SECTORS: SectorConfig[] = [
     netMarginBp:       [ 0,  5, 12, 20],
     roicBp:            [ 0,  8, 15, 28],
     roeBp:             [ 0, 12, 22, 40],
+    revenueGrowthBp:   [ 0,  2,  6, 12],
     grossMarginWeight:     0.45,
     operatingMarginWeight: 0.35,
     netMarginWeight:       0.20,
@@ -100,6 +106,7 @@ const SECTORS: SectorConfig[] = [
     netMarginBp:       [ 0,  4,  9, 16],
     roicBp:            [ 0,  6, 12, 22],
     roeBp:             [ 0, 10, 20, 35],
+    revenueGrowthBp:   [ 0,  4, 10, 20],
     grossMarginWeight:     0.40,
     operatingMarginWeight: 0.40,
     netMarginWeight:       0.20,
@@ -115,6 +122,7 @@ const SECTORS: SectorConfig[] = [
     netMarginBp:       [ 0,  5, 11, 20],
     roicBp:            [ 0,  8, 16, 28],
     roeBp:             [ 0, 11, 20, 34],
+    revenueGrowthBp:   [ 0,  3,  8, 16],
     // Operating margin pesa más — eficiencia operativa es el driver
     grossMarginWeight:     0.35,
     operatingMarginWeight: 0.45,
@@ -131,6 +139,7 @@ const SECTORS: SectorConfig[] = [
     netMarginBp:       [ 0,  6, 13, 22],
     roicBp:            [ 0,  6, 14, 24],
     roeBp:             [ 0,  9, 18, 30],
+    revenueGrowthBp:   [ 0,  2,  7, 14],
     grossMarginWeight:     0.35,
     operatingMarginWeight: 0.45,
     netMarginWeight:       0.20,
@@ -146,6 +155,7 @@ const SECTORS: SectorConfig[] = [
     netMarginBp:       [ 0, 10, 22, 36],
     roicBp:            [ 0,  8, 18, 35],
     roeBp:             [ 0, 12, 24, 42],
+    revenueGrowthBp:   [ 0,  5, 14, 24],
     grossMarginWeight:     0.45,
     operatingMarginWeight: 0.35,
     netMarginWeight:       0.20,
@@ -162,6 +172,7 @@ const SECTORS: SectorConfig[] = [
     // ROIC estructuralmente bajo — no penalizar igual que software
     roicBp:            [ 0,  3,  7, 12],
     roeBp:             [ 0,  6, 11, 16],
+    revenueGrowthBp:   [ 0,  1,  4,  8],
     grossMarginWeight:     0.30,
     operatingMarginWeight: 0.50,
     netMarginWeight:       0.20,
@@ -177,6 +188,7 @@ const SECTORS: SectorConfig[] = [
     netMarginBp:       [ 0,  5, 10, 18],
     roicBp:            [ 0,  5, 12, 20],
     roeBp:             [ 0,  8, 16, 28],
+    revenueGrowthBp:   [ 0,  2,  7, 14],
     grossMarginWeight:     0.35,
     operatingMarginWeight: 0.45,
     netMarginWeight:       0.20,
@@ -192,6 +204,7 @@ const SECTORS: SectorConfig[] = [
     netMarginBp:       [ 0, 10, 20, 32],
     roicBp:            [ 0,  3,  7, 12],
     roeBp:             [ 0,  5, 10, 16],
+    revenueGrowthBp:   [ 0,  2,  6, 11],
     grossMarginWeight:     0.30,
     operatingMarginWeight: 0.50,
     netMarginWeight:       0.20,
@@ -209,6 +222,7 @@ const DEFAULT: SectorConfig = {
   netMarginBp:       [ 0,  8, 18, 30],
   roicBp:            [ 0,  7, 15, 28],
   roeBp:             [ 0, 10, 20, 35],
+  revenueGrowthBp:   [ 0,  3,  9, 18],
   grossMarginWeight:     0.45,
   operatingMarginWeight: 0.35,
   netMarginWeight:       0.20,

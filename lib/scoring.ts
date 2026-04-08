@@ -6,6 +6,9 @@ import {
   GRADE_A_PLUS, GRADE_A, GRADE_B, GRADE_C, GRADE_D,
   BUY_READY_QUALITY_MIN, BUY_READY_PRICE_MIN, BUY_READY_DROP_MAX,
   MISSING_DATA_SCORE, MIN_ANALYST_COUNT, WEAK_ANALYST_FACTOR,
+  FCF_CONVERSION_GREAT, FCF_CONVERSION_GOOD, FCF_CONVERSION_WEAK,
+  INSIDER_OWNERSHIP_GREAT, INSIDER_OWNERSHIP_GOOD,
+  ROIC_PREMIUM_STRONG, ROIC_PREMIUM_GREAT,
 } from "./constants"
 
 // Interpola linealmente entre breakpoints
@@ -32,17 +35,20 @@ export type ScoreBreakdown = {
   capSizeLabel: "Micro Cap" | "Small Cap" | "Mid Cap" | "Large Cap"
 
   // Pilar 1: Eficiencia del Capital (30%)
-  roicScore: number        // ROIC — métrica principal de retorno sobre capital
-  roeScore: number         // ROE — referencia secundaria
-  roaScore: number         // ROA — eficiencia sin efecto apalancamiento
-  fcfMarginScore: number   // FCF / Revenue
-  capitalScore: number     // 0-100
+  roicScore: number          // ROIC — métrica principal de retorno sobre capital
+  roeScore: number           // ROE — referencia secundaria
+  roaScore: number           // ROA — eficiencia sin efecto apalancamiento
+  fcfMarginScore: number     // FCF / Revenue
+  revenueGrowthScore: number // Crecimiento de revenue — breakpoints sectoriales
+  managementScore: number    // Alineación insiders + calidad earnings + apalancamiento operativo
+  capitalScore: number       // 0-100
 
   // Pilar 2: Ventaja Competitiva / Moat (30%) — breakpoints sectoriales
   grossMarginScore: number
   operatingMarginScore: number
   netMarginScore: number
-  moatScore: number        // 0-100
+  moatQuantScore: number     // Prima ROIC sobre sector + conversión FCF (moat cuantificado)
+  moatScore: number          // 0-100
 
   // Contexto sectorial del moat
   sectorLabel: string      // Nombre del sector en español
@@ -73,6 +79,10 @@ export type ScoreBreakdown = {
   verdict: string
   strengths: string[]
   weaknesses: string[]
+
+  // Señal de trading
+  signal: "Compra Fuerte" | "Compra" | "Mantener" | "Venta" | "Venta Fuerte"
+  signalReason: string     // explicación de por qué se emitió la señal
 
   // Dividendos (null si no paga)
   dividendScore: number | null
@@ -120,10 +130,50 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   // FCF Margin: cuánto cash real genera por cada dólar vendido
   const fcfMarginScore = clamp(lerp(s.fcfMargin * 100, [0, 8, 18, 28], OUT))
 
+  // Revenue Growth: crecimiento de ventas con expectativas calibradas por sector
+  const revenueGrowthScore = clamp(lerp(s.revenueGrowth * 100, adjSector.revenueGrowthBp, OUT))
+
+  // Management Score: 3 señales de calidad de gestión
+  // 1) FCF Conversion = FCF / Net Income — ¿las ganancias contables son cash real?
+  const netIncome = s.totalRevenue > 0 ? s.netMargin * s.totalRevenue : 0
+  const fcfConversion = netIncome > 0 ? s.freeCashflow / netIncome : 0
+  const fcfConversionScore =
+    fcfConversion >= FCF_CONVERSION_GREAT ? 100 :
+    fcfConversion >= FCF_CONVERSION_GOOD  ? clamp(lerp(fcfConversion, [FCF_CONVERSION_GOOD, FCF_CONVERSION_GREAT, FCF_CONVERSION_GREAT, FCF_CONVERSION_GREAT], [70, 100, 100, 100])) :
+    fcfConversion >= FCF_CONVERSION_WEAK  ? clamp(lerp(fcfConversion, [FCF_CONVERSION_WEAK, FCF_CONVERSION_GOOD,  FCF_CONVERSION_GOOD,  FCF_CONVERSION_GOOD],  [30,  70,  70,  70])) :
+    fcfConversion >  0                    ? 15 :
+    netIncome <= 0                        ? 40 :  // sin datos suficientes
+    5                                             // FCF negativo con earnings positivos
+
+  // 2) Insider Ownership — % de acciones en manos del management
+  const insiderScore = clamp(lerp(
+    s.heldPercentInsiders * 100,
+    [0, 1, INSIDER_OWNERSHIP_GOOD * 100, INSIDER_OWNERSHIP_GREAT * 100],
+    [20, 40, 72, 100]
+  ))
+
+  // 3) Operating Leverage — EPS creció más rápido que Revenue → margen en expansión
+  const leverageScore =
+    s.earningsGrowth > 0 && s.revenueGrowth > 0 && (s.earningsGrowth - s.revenueGrowth) >= 0.03
+      ? 75   // expansión de margen operativo confirmada
+      : s.earningsGrowth > s.revenueGrowth
+        ? 55  // ligera expansión
+        : s.earningsGrowth < 0
+          ? 20  // EPS cayendo
+          : 40  // sin señal clara
+
+  const managementScore = clamp(
+    fcfConversionScore * 0.45 +
+    insiderScore       * 0.30 +
+    leverageScore      * 0.25
+  )
+
   const capitalScore = clamp(
-    roicScore    * 0.45 +   // ROIC es el driver principal
-    roaScore     * 0.30 +
-    fcfMarginScore * 0.25
+    roicScore           * 0.35 +   // ROIC sigue siendo el driver principal
+    roaScore            * 0.20 +
+    fcfMarginScore      * 0.20 +
+    revenueGrowthScore  * 0.15 +   // crecimiento ajustado al sector
+    managementScore     * 0.10     // calidad de gestión
   )
 
   // ── Pilar 2: Ventaja Competitiva (Moat) — breakpoints sectoriales ─────────
@@ -137,12 +187,24 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   // Net Margin: resultado final después de impuestos e intereses
   const netMarginScore = clamp(lerp(s.netMargin * 100, adjSector.netMarginBp, OUT))
 
+  // Moat Cuantitativo: prima ROIC sobre el umbral "bueno" del sector + calidad FCF
+  // Mide si el negocio genera ROIC estructuralmente por encima de sus pares
+  const roicPremium = s.hasROIC ? s.roic * 100 - adjSector.roicBp[2] : 0
+  const roicPremiumScore = clamp(lerp(
+    roicPremium,
+    [-5, 0, ROIC_PREMIUM_STRONG, ROIC_PREMIUM_GREAT],
+    [0, 35, 75, 100]
+  ))
+  const moatQuantScore = clamp(roicPremiumScore * 0.70 + fcfConversionScore * 0.30)
+
   // Pesos también sectoriales — financieros: gross margin casi no importa
-  const moatScore = clamp(
+  // moatQuantScore añade 15% de señal cuantificada al moat total
+  const moatBaseScore = clamp(
     grossMarginScore    * adjSector.grossMarginWeight +
     operatingMarginScore * adjSector.operatingMarginWeight +
     netMarginScore      * adjSector.netMarginWeight
   )
+  const moatScore = clamp(moatBaseScore * 0.85 + moatQuantScore * 0.15)
 
   // ── Pilar 3: Solidez Financiera ───────────────────────────────────────────
   const isFinancial    = s.sector === "Financial Services"
@@ -285,6 +347,9 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   if (s.upsideToTarget >= 20 && s.analystCount >= 3)  strengths.push(`+${s.upsideToTarget.toFixed(0)}% upside según ${s.analystCount} analistas`)
   else if (s.upsideToTarget >= 20)                    strengths.push(`+${s.upsideToTarget.toFixed(0)}% upside según analistas`)
   if (s.earningsGrowth * 100 >= 15) strengths.push(`Crecimiento EPS ${(s.earningsGrowth * 100).toFixed(0)}% — momentum de ganancias`)
+  if (s.revenueGrowth * 100 >= adjSector.revenueGrowthBp[2]) strengths.push(`Revenue +${(s.revenueGrowth * 100).toFixed(0)}% — crecimiento por encima de lo esperado para el sector`)
+  if (fcfConversion >= FCF_CONVERSION_GOOD && netIncome > 0) strengths.push(`FCF conversion ${(fcfConversion * 100).toFixed(0)}% — ganancias contables respaldadas por cash real`)
+  if (s.heldPercentInsiders >= INSIDER_OWNERSHIP_GOOD) strengths.push(`Insider ownership ${(s.heldPercentInsiders * 100).toFixed(0)}% — management con piel en el juego`)
 
   if (s.roic > 0 && s.roic * 100 < adjSector.roicBp[1])       weaknesses.push(`ROIC ${(s.roic * 100).toFixed(0)}% — posiblemente por debajo del costo de capital`)
   if (s.roe * 100 < adjSector.roeBp[1])                       weaknesses.push(`ROE ${(s.roe * 100).toFixed(0)}% — retorno bajo sobre patrimonio`)
@@ -301,6 +366,8 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   if (s.lynchValue > 0 && s.discountToLynch <= -20)    weaknesses.push(`Cotiza ${Math.abs(s.discountToLynch).toFixed(0)}% por encima del valor Lynch — precio exigente`)
   if (s.earningsGrowth * 100 < 0)  weaknesses.push("EPS decreciendo — el negocio está perdiendo tracción")
   if (s.netMargin * 100 < adjSector.netMarginBp[1]) weaknesses.push(`Margen neto ${(s.netMargin * 100).toFixed(0)}% — márgenes por debajo de lo esperado para el sector`)
+  if (s.revenueGrowth * 100 < adjSector.revenueGrowthBp[1] && s.revenueGrowth > -0.05) weaknesses.push(`Revenue +${(s.revenueGrowth * 100).toFixed(0)}% — crecimiento por debajo del promedio sectorial`)
+  if (netIncome > 0 && fcfConversion < FCF_CONVERSION_WEAK) weaknesses.push(`FCF conversion ${(fcfConversion * 100).toFixed(0)}% — las ganancias no se reflejan en cash (calidad dudosa)`)
 
   // ── Dividendos ────────────────────────────────────────────────────────────
   let dividendScore: number | null = null
@@ -337,15 +404,24 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   // ── Veredicto ─────────────────────────────────────────────────────────────
   const verdict = buildVerdict(grade, capitalScore, moatScore, healthScore, priceScore, s)
 
+  // ── Señal de trading ──────────────────────────────────────────────────────
+  const { signal, signalReason } = buildSignal(
+    qualityScore, priceScore, healthScore,
+    s.dropFrom52w, s.earningsGrowth, s.freeCashflow, s.totalCash
+  )
+
   return {
     roicScore:            Math.round(roicScore),
     roeScore:             Math.round(roeScore),
     roaScore:             Math.round(roaScore),
     fcfMarginScore:       Math.round(fcfMarginScore),
+    revenueGrowthScore:   Math.round(revenueGrowthScore),
+    managementScore:      Math.round(managementScore),
     capitalScore:         Math.round(capitalScore),
     grossMarginScore:     Math.round(grossMarginScore),
     operatingMarginScore: Math.round(operatingMarginScore),
     netMarginScore:       Math.round(netMarginScore),
+    moatQuantScore:       Math.round(moatQuantScore),
     moatScore:            Math.round(moatScore),
     capSizeLabel,
     sectorLabel:          sector.label,
@@ -370,8 +446,146 @@ export function scoreStock(s: StockData): ScoreBreakdown {
     verdict,
     strengths:  strengths.slice(0, 4),
     weaknesses: weaknesses.slice(0, 3),
+    signal,
+    signalReason,
     dividendScore,
     dividendGrade,
+  }
+}
+
+type Signal = ScoreBreakdown["signal"]
+
+function buildSignal(
+  qualityScore: number,
+  priceScore: number,
+  healthScore: number,
+  dropFrom52w: number,
+  earningsGrowth: number,
+  freeCashflow: number,
+  totalCash: number,
+): { signal: Signal; signalReason: string } {
+
+  // ── Overrides por deterioro — tienen prioridad sobre la matriz ────────────
+
+  // Deterioro severo + precio no compensa → Venta Fuerte inmediata
+  if (earningsGrowth < -0.10 && priceScore < 35) {
+    return {
+      signal: "Venta Fuerte",
+      signalReason: `EPS cayendo ${(earningsGrowth * 100).toFixed(0)}% y precio sin descuento suficiente para compensar el deterioro.`,
+    }
+  }
+
+  // Riesgo financiero crítico → Venta Fuerte inmediata
+  if (healthScore < 25) {
+    return {
+      signal: "Venta Fuerte",
+      signalReason: "Solidez financiera crítica — riesgo alto de impago o dilución severa.",
+    }
+  }
+
+  // FCF negativo sin runway y calidad insuficiente → Venta Fuerte
+  if (freeCashflow < 0 && totalCash <= 0 && qualityScore < 50) {
+    return {
+      signal: "Venta Fuerte",
+      signalReason: "Quema cash sin reservas y sin calidad de negocio que lo justifique.",
+    }
+  }
+
+  // EPS cayendo pero sin llegar a -10% → bloquea cualquier Compra
+  const deterioro = earningsGrowth < -0.05
+
+  // ── Matriz Quality × Price ────────────────────────────────────────────────
+  const qAlta  = qualityScore >= 65
+  const qMedia = qualityScore >= 45 && qualityScore < 65
+  const qBaja  = qualityScore < 45
+
+  const pBarato = priceScore >= 55
+  const pJusto  = priceScore >= 35 && priceScore < 55
+  const pCaro   = priceScore < 35
+
+  // Calidad Alta
+  if (qAlta) {
+    if (pBarato) {
+      if (deterioro) {
+        return {
+          signal: "Mantener",
+          signalReason: "Buen negocio y precio atractivo, pero EPS decreciendo — esperar confirmación de estabilización.",
+        }
+      }
+      if (dropFrom52w <= -15) {
+        return {
+          signal: "Compra Fuerte",
+          signalReason: `Negocio de alta calidad con descuento de mercado del ${Math.abs(dropFrom52w).toFixed(0)}% desde máximos y precio atractivo en múltiplos.`,
+        }
+      }
+      return {
+        signal: "Compra",
+        signalReason: "Negocio de alta calidad a precio atractivo. Falta caída de mercado para señal de entrada óptima.",
+      }
+    }
+    if (pJusto) {
+      if (deterioro) {
+        return {
+          signal: "Mantener",
+          signalReason: "Calidad alta pero EPS decreciendo — no es momento de aumentar posición.",
+        }
+      }
+      return {
+        signal: "Compra",
+        signalReason: "Negocio de alta calidad a precio razonable. No es ganga, pero la calidad justifica la entrada.",
+      }
+    }
+    // pCaro
+    return {
+      signal: "Mantener",
+      signalReason: "Excelente negocio pero cotizando a prima — esperar mejor punto de entrada.",
+    }
+  }
+
+  // Calidad Media
+  if (qMedia) {
+    if (pBarato) {
+      if (deterioro) {
+        return {
+          signal: "Mantener",
+          signalReason: "Precio atractivo pero calidad media con EPS en baja — el descuento puede ser una trampa.",
+        }
+      }
+      return {
+        signal: "Compra",
+        signalReason: "Empresa sólida con precio que ofrece descuento. Monitorear que los fundamentales no se deterioren.",
+      }
+    }
+    if (pJusto) {
+      return {
+        signal: "Mantener",
+        signalReason: "Empresa decente a precio justo — sin urgencia de comprar ni razón para vender.",
+      }
+    }
+    // pCaro
+    return {
+      signal: "Venta",
+      signalReason: "Empresa de calidad media cotizando cara — la relación riesgo/retorno no justifica mantener.",
+    }
+  }
+
+  // Calidad Baja
+  if (pBarato) {
+    return {
+      signal: "Mantener",
+      signalReason: "Precio bajo pero negocio débil — posible value trap. Requiere análisis profundo antes de actuar.",
+    }
+  }
+  if (pJusto) {
+    return {
+      signal: "Venta",
+      signalReason: "Negocio de baja calidad sin descuento suficiente para compensar el riesgo.",
+    }
+  }
+  // qBaja + pCaro
+  return {
+    signal: "Venta Fuerte",
+    signalReason: "Negocio débil cotizando caro — la combinación más desfavorable para el inversor.",
   }
 }
 

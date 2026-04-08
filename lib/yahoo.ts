@@ -159,6 +159,9 @@ export type StockData = {
   roic: number            // NOPAT / Invested Capital — métrica clave de moat real
   hasROIC: boolean        // false cuando los datos upstream son insuficientes para calcular ROIC
 
+  // Calidad de gestión
+  heldPercentInsiders: number  // % de acciones en manos del management (0-1)
+
   // Dividendos
   dividendRate: number          // Dividendo anual por acción ($/año)
   payoutRatio: number           // % de earnings pagado como dividendo
@@ -402,6 +405,9 @@ export async function fetchStockData(symbol: string): Promise<StockData | null> 
         const shares   = stats.sharesOutstanding?.raw
         return !!(revenue && opMargin !== undefined && equity && shares)
       })(),
+
+      // ── Gestión ──────────────────────────────────────────────────────────
+      heldPercentInsiders: stats.heldPercentInsiders?.raw ?? 0,
 
       // ── Dividendos ───────────────────────────────────────────────────────
       dividendRate:      summary.dividendRate?.raw ?? summary.trailingAnnualDividendRate?.raw ?? 0,
