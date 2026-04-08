@@ -44,11 +44,16 @@ export type ScoreBreakdown = {
 
   // Pilar 3: Solidez Financiera (20%)
   debtScore: number
+  netDebtEbitdaScore: number
+  fcfHealthScore: number
+  netDebtToEbitda: number  // ratio bruto para display (−1 = posición cash neta)
   healthScore: number      // 0-100
 
   // Pilar 4: Precio (20%)
   pfcfScore: number
   evEbitdaScore: number
+  grahamScore: number      // descuento vs Graham Number (0 si EPS/BookValue negativos)
+  lynchScore: number       // descuento vs Lynch Fair Value (EPS * 15)
   upsideScore: number
   priceScore: number       // 0-100
 
@@ -133,27 +138,101 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   )
 
   // ── Pilar 3: Solidez Financiera ───────────────────────────────────────────
+  const isFinancial    = s.sector === "Financial Services"
+  const isCapIntensive = ["Utilities", "Energy", "Real Estate", "Industrials"].includes(s.sector)
+
+  // D/E ajustado por sector: bancos son naturalmente apalancados (D/E 8-12x es normal)
   const de = s.debtToEquity / 100
-  const debtScore = clamp(lerp(-de, [-4, -2, -0.5, 0], [0, 20, 70, 100]))
-  const healthScore = clamp(debtScore)
+  const deBp: [number, number, number, number] = isFinancial
+    ? [-20, -10, -5, 0]   // financieros: D/E 5x aún es bueno
+    : [-4,  -2,  -0.5, 0] // resto: D/E 2x ya es elevado
+  const debtScore = clamp(lerp(-de, deBp, [0, 20, 70, 100]))
+
+  // Net Debt / EBITDA — cuántos años de ganancias necesita para cancelar deuda
+  const netDebt = Math.max(s.totalDebt - s.totalCash, 0)
+  const hasNetCash = s.totalCash > s.totalDebt
+  const netDebtToEbitda = (s.ebitda > 0 && !hasNetCash) ? netDebt / s.ebitda : (hasNetCash ? -1 : 0)
+
+  let netDebtEbitdaScore: number
+  if (isFinancial) {
+    // Para bancos el concepto no aplica igual — usamos roeScore como proxy de solidez
+    netDebtEbitdaScore = roeScore
+  } else if (hasNetCash) {
+    // Posición de cash neta: la empresa tiene más cash que deuda
+    netDebtEbitdaScore = 100
+  } else if (s.ebitda <= 0 && netDebt > 0) {
+    // EBITDA negativo con deuda — señal de alarma
+    netDebtEbitdaScore = 5
+  } else if (s.ebitda <= 0) {
+    // Sin EBITDA y sin deuda neta — sin suficientes datos
+    netDebtEbitdaScore = 40
+  } else {
+    // Breakpoints según intensidad de capital del sector
+    const ndBp: [number, number, number, number] = isCapIntensive
+      ? [-9, -5, -2.5, 0]  // utilities/energy: 5x es aceptable
+      : [-6, -3, -1.5, 0]  // resto: >3x ya es elevado
+    netDebtEbitdaScore = clamp(lerp(-netDebtToEbitda, ndBp, [0, 25, 65, 100]))
+  }
+
+  // FCF Health — genera cash o lo quema, y cuánto runway tiene
+  let fcfHealthScore: number
+  if (s.freeCashflow > 0) {
+    // FCF positivo: cuanto mejor el margen, más sana la empresa
+    fcfHealthScore = clamp(lerp(s.fcfMargin * 100, [0, 5, 15, 25], [55, 65, 85, 100]))
+  } else if (s.freeCashflow < 0 && s.totalCash > 0) {
+    // FCF negativo: cuántos años de cash le quedan al ritmo actual
+    const runway = s.totalCash / Math.abs(s.freeCashflow)
+    fcfHealthScore = runway >= 3 ? 35 : runway >= 1 ? 18 : 5
+  } else if (s.freeCashflow === 0) {
+    // Sin dato de FCF
+    fcfHealthScore = 40
+  } else {
+    // FCF negativo y sin cash: riesgo crítico de liquidez
+    fcfHealthScore = 5
+  }
+
+  const healthScore = clamp(
+    debtScore          * 0.35 +
+    netDebtEbitdaScore * 0.40 +
+    fcfHealthScore     * 0.25
+  )
 
   // ── Pilar 4: Precio ───────────────────────────────────────────────────────
+  // P/FCF: penaliza datos faltantes (35) en lugar de neutral (50)
   const pfcfScore = s.pFcf > 0
     ? clamp(lerp(-s.pFcf, [-60, -30, -15, -5], [0, 20, 65, 100]))
-    : 50
+    : 35
 
+  // EV/EBITDA: ídem — sin dato no es neutral, es información faltante
   const evEbitdaScore = s.evToEbitda > 0
     ? clamp(lerp(-s.evToEbitda, [-40, -20, -10, -5], [0, 20, 65, 100]))
-    : 50
+    : 35
 
-  const upsideScore = s.analystTarget > 0
+  // Graham Number: sqrt(22.5 * EPS * BookValue) — solo aplica con EPS y BV positivos
+  // discountToGraham > 0 → precio está por debajo del Graham Number (barato)
+  const grahamScore = s.grahamNumber > 0
+    ? clamp(lerp(s.discountToGraham, [-40, -10, 20, 50], [0, 25, 65, 100]))
+    : 35   // sin graham válido: leve penalización por falta de datos
+
+  // Lynch Fair Value: EPS * 15 — regla de Peter Lynch para empresas en crecimiento moderado
+  // discountToLynch > 0 → precio por debajo del valor Lynch (barato)
+  const lynchScore = s.lynchValue > 0
+    ? clamp(lerp(s.discountToLynch, [-40, -10, 20, 50], [0, 25, 65, 100]))
+    : 35   // sin Lynch válido (EPS negativo): leve penalización
+
+  // Upside de analistas: requiere al menos 3 analistas para ser señal confiable
+  const upsideScore = (s.analystTarget > 0 && s.analystCount >= 3)
     ? clamp(lerp(s.upsideToTarget, [-10, 0, 15, 35], [0, 20, 60, 100]))
-    : 50
+    : s.analystTarget > 0
+      ? clamp(lerp(s.upsideToTarget, [-10, 0, 15, 35], [0, 20, 60, 100])) * 0.6  // 1-2 analistas: señal débil
+      : 35
 
   const priceScore = clamp(
-    pfcfScore    * 0.45 +
-    evEbitdaScore * 0.35 +
-    upsideScore  * 0.20
+    pfcfScore     * 0.30 +
+    evEbitdaScore * 0.25 +
+    grahamScore   * 0.20 +
+    lynchScore    * 0.15 +
+    upsideScore   * 0.10
   )
 
   // ── Score Final ───────────────────────────────────────────────────────────
@@ -195,19 +274,31 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   if (s.roic * 100 >= 15)          strengths.push(`ROIC ${(s.roic * 100).toFixed(0)}% — genera valor económico real por encima del costo de capital`)
   if (s.roe * 100 >= 20)           strengths.push(`ROE ${(s.roe * 100).toFixed(0)}% — retorno excepcional sobre patrimonio`)
   if (s.grossMargin * 100 >= 50)   strengths.push(`Margen bruto ${(s.grossMargin * 100).toFixed(0)}% — fuerte pricing power vs su sector`)
-  if (s.fcfMargin * 100 >= 18)     strengths.push(`FCF margin ${(s.fcfMargin * 100).toFixed(0)}% — genera cash de forma consistente`)
   if (s.operatingMargin * 100 >= 22) strengths.push(`Margen operativo ${(s.operatingMargin * 100).toFixed(0)}% — eficiencia operativa alta`)
-  if (de <= 0.5)                   strengths.push("Balance limpio — deuda muy baja")
+  if (hasNetCash)                  strengths.push(`Posición de cash neta — más cash que deuda ($${(s.totalCash / 1e9).toFixed(1)}B vs $${(s.totalDebt / 1e9).toFixed(1)}B)`)
+  else if (de <= 0.5)              strengths.push("Balance limpio — deuda muy baja")
+  if (!isFinancial && netDebtToEbitda > 0 && netDebtToEbitda <= 1.5) strengths.push(`Net Debt/EBITDA ${netDebtToEbitda.toFixed(1)}x — deuda muy manejable`)
+  if (s.freeCashflow > 0 && s.fcfMargin * 100 >= 18) strengths.push(`FCF margin ${(s.fcfMargin * 100).toFixed(0)}% — genera cash de forma consistente`)
   if (s.pFcf > 0 && s.pFcf < 15)  strengths.push(`P/FCF ${s.pFcf.toFixed(1)}x — precio atractivo vs flujo de caja`)
-  if (s.upsideToTarget >= 20)      strengths.push(`+${s.upsideToTarget.toFixed(0)}% upside según analistas`)
+  if (s.grahamNumber > 0 && s.discountToGraham >= 20) strengths.push(`${s.discountToGraham.toFixed(0)}% por debajo del Graham Number ($${s.grahamNumber.toFixed(0)})`)
+  if (s.lynchValue > 0 && s.discountToLynch >= 20)    strengths.push(`${s.discountToLynch.toFixed(0)}% por debajo del valor Lynch ($${s.lynchValue.toFixed(0)})`)
+  if (s.upsideToTarget >= 20 && s.analystCount >= 3)  strengths.push(`+${s.upsideToTarget.toFixed(0)}% upside según ${s.analystCount} analistas`)
+  else if (s.upsideToTarget >= 20)                    strengths.push(`+${s.upsideToTarget.toFixed(0)}% upside según analistas`)
   if (s.earningsGrowth * 100 >= 15) strengths.push(`Crecimiento EPS ${(s.earningsGrowth * 100).toFixed(0)}% — momentum de ganancias`)
 
   if (s.roic * 100 < 8 && s.roic > 0) weaknesses.push(`ROIC ${(s.roic * 100).toFixed(0)}% — posiblemente por debajo del costo de capital`)
   if (s.roe * 100 < 10)            weaknesses.push(`ROE ${(s.roe * 100).toFixed(0)}% — retorno bajo sobre patrimonio`)
   if (s.grossMargin * 100 < 30)    weaknesses.push(`Margen bruto ${(s.grossMargin * 100).toFixed(0)}% — sin poder de fijación de precios`)
-  if (s.fcfMargin * 100 < 5)       weaknesses.push("FCF margin bajo — el negocio consume más cash del que genera")
-  if (de > 2)                      weaknesses.push(`D/E ${de.toFixed(1)}x — deuda elevada, riesgo financiero`)
+  if (s.freeCashflow > 0 && s.fcfMargin * 100 < 5) weaknesses.push(`FCF margin ${(s.fcfMargin * 100).toFixed(1)}% — genera poco cash libre por cada dólar de revenue`)
+  if (!isFinancial && de > 2)      weaknesses.push(`D/E ${de.toFixed(1)}x — deuda elevada, riesgo financiero`)
+  if (!isFinancial && netDebtToEbitda >= 4) weaknesses.push(`Net Debt/EBITDA ${netDebtToEbitda.toFixed(1)}x — deuda excesiva en relación a ganancias`)
+  if (s.freeCashflow < 0) {
+    const runway = s.totalCash > 0 ? (s.totalCash / Math.abs(s.freeCashflow)).toFixed(1) : "0"
+    weaknesses.push(`FCF negativo — quema cash. Runway estimado: ${runway} años`)
+  }
   if (s.pFcf > 30)                 weaknesses.push(`P/FCF ${s.pFcf.toFixed(1)}x — precio caro relativo a su FCF`)
+  if (s.grahamNumber > 0 && s.discountToGraham <= -20) weaknesses.push(`Cotiza ${Math.abs(s.discountToGraham).toFixed(0)}% por encima del Graham Number — sin margen de seguridad`)
+  if (s.lynchValue > 0 && s.discountToLynch <= -20)    weaknesses.push(`Cotiza ${Math.abs(s.discountToLynch).toFixed(0)}% por encima del valor Lynch — precio exigente`)
   if (s.earningsGrowth * 100 < 0)  weaknesses.push("EPS decreciendo — el negocio está perdiendo tracción")
   if (s.netMargin * 100 < 5)       weaknesses.push(`Margen neto ${(s.netMargin * 100).toFixed(0)}% — márgenes muy ajustados`)
 
@@ -261,9 +352,14 @@ export function scoreStock(s: StockData): ScoreBreakdown {
     moatType:             sector.moatType,
     capRange:             sector.capRange,
     debtScore:            Math.round(debtScore),
+    netDebtEbitdaScore:   Math.round(netDebtEbitdaScore),
+    fcfHealthScore:       Math.round(fcfHealthScore),
+    netDebtToEbitda:      Math.round(netDebtToEbitda * 10) / 10,
     healthScore:          Math.round(healthScore),
     pfcfScore:            Math.round(pfcfScore),
     evEbitdaScore:        Math.round(evEbitdaScore),
+    grahamScore:          Math.round(grahamScore),
+    lynchScore:           Math.round(lynchScore),
     upsideScore:          Math.round(upsideScore),
     priceScore:           Math.round(priceScore),
     qualityScore:         Math.round(qualityScore),

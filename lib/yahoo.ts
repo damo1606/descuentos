@@ -1,5 +1,42 @@
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+const FETCH_TIMEOUT_MS = 8_000
+const BACKOFF_MS = [1_000, 2_500, 5_000] as const  // delays entre reintentos
+
+function sleep(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms))
+}
+
+// Fetch con timeout — lanza error con code='timeout' si excede el límite
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    if ((err as Error).name === "AbortError")
+      throw Object.assign(new Error(`Yahoo Finance timeout después de ${FETCH_TIMEOUT_MS}ms`), { code: "timeout" })
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Clasifica la respuesta de Yahoo — null significa OK, string = tipo de error
+function detectYahooError(json: unknown): "rate_limited" | "not_found" | "no_data" | null {
+  const qs = (json as { quoteSummary?: { result: unknown; error?: { code?: string; description?: string } } })
+    ?.quoteSummary
+  if (!qs) return "no_data"
+  if (qs.error) {
+    const code = qs.error.code?.toLowerCase() ?? ""
+    if (code.includes("too many") || code === "429") return "rate_limited"
+    if (code === "not found") return "not_found"
+    return "no_data"
+  }
+  if (!qs.result || (Array.isArray(qs.result) && qs.result.length === 0)) return "no_data"
+  return null
+}
+
 // Interpola linealmente un valor en un rango de breakpoints → output
 function score(value: number, bp: [number, number, number, number], out: [number, number, number, number]): number {
   if (value <= bp[0]) return out[0]
@@ -138,35 +175,95 @@ export type StockData = {
   compositeScore: number
 }
 
+function buildUrl(symbol: string, crumb: string) {
+  return `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics,assetProfile&crumb=${encodeURIComponent(crumb)}`
+}
+
 export async function fetchStockData(symbol: string): Promise<StockData | null> {
   try {
-    const auth = await getCrumb()
-    if (!auth) return null
-
-    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics,assetProfile&crumb=${encodeURIComponent(auth.crumb)}`
-
-    let res = await fetch(url, {
-      headers: { "User-Agent": UA, Cookie: auth.cookie },
-      next: { revalidate: 3600 },
-    })
-
-    // Si el crumb expiró, refrescamos y reintentamos una vez
-    if (res.status === 401) {
-      _crumb = null
-      _cookie = null
-      const newAuth = await getCrumb()
-      if (!newAuth) return null
-      const retryUrl = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics,assetProfile&crumb=${encodeURIComponent(newAuth.crumb)}`
-      res = await fetch(retryUrl, {
-        headers: { "User-Agent": UA, Cookie: newAuth.cookie },
-        next: { revalidate: 3600 },
-      })
+    let auth = await getCrumb()
+    if (!auth) {
+      console.error(`[yahoo] No se pudo obtener crumb para ${symbol}`)
+      return null
     }
 
-    if (!res.ok) return null
+    let json: unknown = null
 
-    const json = await res.json()
-    const r = json?.quoteSummary?.result?.[0]
+    for (let attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
+      try {
+        const res = await fetchWithTimeout(buildUrl(symbol, auth.crumb), {
+          headers: { "User-Agent": UA, Cookie: auth.cookie },
+          next: { revalidate: 3600 },
+        })
+
+        // Crumb expirado → refrescar y reintentar sin contar como intento fallido
+        if (res.status === 401) {
+          _crumb = null
+          _cookie = null
+          const refreshed = await getCrumb()
+          if (!refreshed) return null
+          auth = refreshed
+          attempt--  // no consumir intento por crumb expirado
+          continue
+        }
+
+        // HTTP 429 explícito
+        if (res.status === 429) {
+          if (attempt < BACKOFF_MS.length) {
+            console.warn(`[yahoo] Rate limit HTTP 429 en ${symbol} — reintento ${attempt + 1} en ${BACKOFF_MS[attempt]}ms`)
+            await sleep(BACKOFF_MS[attempt])
+            continue
+          }
+          console.error(`[yahoo] Rate limit persistente en ${symbol} tras ${BACKOFF_MS.length} reintentos`)
+          return null
+        }
+
+        if (!res.ok) {
+          console.error(`[yahoo] HTTP ${res.status} para ${symbol}`)
+          return null
+        }
+
+        json = await res.json()
+        const errorType = detectYahooError(json)
+
+        if (errorType === "rate_limited") {
+          if (attempt < BACKOFF_MS.length) {
+            console.warn(`[yahoo] Rate limit en body para ${symbol} — reintento ${attempt + 1} en ${BACKOFF_MS[attempt]}ms`)
+            await sleep(BACKOFF_MS[attempt])
+            continue
+          }
+          console.error(`[yahoo] Rate limit persistente en body para ${symbol}`)
+          return null
+        }
+
+        if (errorType === "not_found") {
+          console.warn(`[yahoo] Símbolo no encontrado: ${symbol}`)
+          return null
+        }
+
+        if (errorType === "no_data") {
+          console.warn(`[yahoo] Sin datos fundamentales para ${symbol}`)
+          return null
+        }
+
+        break  // Sin error — salir del loop
+      } catch (err) {
+        const code = (err as { code?: string }).code
+        if (code === "timeout") {
+          if (attempt < BACKOFF_MS.length) {
+            console.warn(`[yahoo] Timeout en ${symbol} — reintento ${attempt + 1}`)
+            await sleep(BACKOFF_MS[attempt])
+            continue
+          }
+          console.error(`[yahoo] Timeout persistente en ${symbol}`)
+          return null
+        }
+        throw err  // error desconocido — propagar
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = ((json as any)?.quoteSummary?.result?.[0]) as Record<string, any> | undefined
     if (!r) return null
 
     const profile   = r.assetProfile        ?? {}
