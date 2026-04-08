@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -12,15 +12,36 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ── Modo claro ───────────────────────────────────────────────────────────────
+   Invierte la escala de grises de Tailwind — sin tocar ninguna página.
+   bg-gray-900 (fondo oscuro) → casi blanco
+   text-gray-100 (texto claro) → casi negro
+   Los colores de acento (verde, rojo, azul, amarillo) no se modifican.
+─────────────────────────────────────────────────────────────────────────────── */
+html.light {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+
+  /* Invertir escala de grises: el 950 (más oscuro) pasa a ser el más claro */
+  --color-gray-950: oklch(0.99 0 0);
+  --color-gray-900: oklch(0.97 0 0);
+  --color-gray-800: oklch(0.92 0 0);
+  --color-gray-700: oklch(0.86 0 0);
+  --color-gray-600: oklch(0.72 0 0);
+  --color-gray-500: oklch(0.58 0 0);
+  --color-gray-400: oklch(0.44 0 0);
+  --color-gray-300: oklch(0.34 0 0);
+  --color-gray-200: oklch(0.24 0 0);
+  --color-gray-100: oklch(0.16 0 0);
+  --color-gray-50:  oklch(0.11 0 0);
+}
+
+/* text-white y bg-white deben invertirse en modo claro */
+html.light .text-white   { color: oklch(0.13 0 0) !important; }
+html.light .bg-white     { background-color: oklch(0.97 0 0) !important; }

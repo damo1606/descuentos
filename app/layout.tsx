@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Nav } from "./Nav";
+import { ThemeProvider } from "./ThemeProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,7 +29,21 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col"><Nav />{children}</body>
+      {/* Aplica el tema antes de que React hidrate para evitar flash */}
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            if (localStorage.getItem('theme') === 'light')
+              document.documentElement.classList.add('light');
+          } catch {}
+        `}} />
+      </head>
+      <body className="min-h-full flex flex-col">
+        <ThemeProvider>
+          <Nav />
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
