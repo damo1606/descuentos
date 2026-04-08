@@ -1,5 +1,12 @@
 import type { StockData } from "./yahoo"
 import { getSectorConfig } from "./sectors"
+import {
+  MICRO_CAP_MAX, SMALL_CAP_MAX, MID_CAP_MAX,
+  CAP_FACTOR_MICRO, CAP_FACTOR_SMALL,
+  GRADE_A_PLUS, GRADE_A, GRADE_B, GRADE_C, GRADE_D,
+  BUY_READY_QUALITY_MIN, BUY_READY_PRICE_MIN, BUY_READY_DROP_MAX,
+  MISSING_DATA_SCORE, MIN_ANALYST_COUNT, WEAK_ANALYST_FACTOR,
+} from "./constants"
 
 // Interpola linealmente entre breakpoints
 function lerp(v: number, bp: [number, number, number, number], out: [number, number, number, number]): number {
@@ -81,13 +88,13 @@ export function scoreStock(s: StockData): ScoreBreakdown {
 
   // Cap size factor — small/micro caps tienen menos escala; reducimos exigencia de breakpoints
   const capFactor =
-    s.marketCap > 0 && s.marketCap < 300e6  ? 0.70 :
-    s.marketCap > 0 && s.marketCap < 2e9    ? 0.85 : 1.0
+    s.marketCap > 0 && s.marketCap < MICRO_CAP_MAX ? CAP_FACTOR_MICRO :
+    s.marketCap > 0 && s.marketCap < SMALL_CAP_MAX ? CAP_FACTOR_SMALL : 1.0
 
   const capSizeLabel: ScoreBreakdown["capSizeLabel"] =
-    s.marketCap < 300e6  ? "Micro Cap" :
-    s.marketCap < 2e9    ? "Small Cap" :
-    s.marketCap < 10e9   ? "Mid Cap"   : "Large Cap"
+    s.marketCap < MICRO_CAP_MAX ? "Micro Cap" :
+    s.marketCap < SMALL_CAP_MAX ? "Small Cap" :
+    s.marketCap < MID_CAP_MAX   ? "Mid Cap"   : "Large Cap"
 
   // Ajustar breakpoints de márgenes y ROIC para small/micro cap
   const adjSector = capFactor < 1 ? {
@@ -198,34 +205,27 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   )
 
   // ── Pilar 4: Precio ───────────────────────────────────────────────────────
-  // P/FCF: penaliza datos faltantes (35) en lugar de neutral (50)
   const pfcfScore = s.pFcf > 0
     ? clamp(lerp(-s.pFcf, [-60, -30, -15, -5], [0, 20, 65, 100]))
-    : 35
+    : MISSING_DATA_SCORE
 
-  // EV/EBITDA: ídem — sin dato no es neutral, es información faltante
   const evEbitdaScore = s.evToEbitda > 0
     ? clamp(lerp(-s.evToEbitda, [-40, -20, -10, -5], [0, 20, 65, 100]))
-    : 35
+    : MISSING_DATA_SCORE
 
-  // Graham Number: sqrt(22.5 * EPS * BookValue) — solo aplica con EPS y BV positivos
-  // discountToGraham > 0 → precio está por debajo del Graham Number (barato)
   const grahamScore = s.grahamNumber > 0
     ? clamp(lerp(s.discountToGraham, [-40, -10, 20, 50], [0, 25, 65, 100]))
-    : 35   // sin graham válido: leve penalización por falta de datos
+    : MISSING_DATA_SCORE
 
-  // Lynch Fair Value: EPS * 15 — regla de Peter Lynch para empresas en crecimiento moderado
-  // discountToLynch > 0 → precio por debajo del valor Lynch (barato)
   const lynchScore = s.lynchValue > 0
     ? clamp(lerp(s.discountToLynch, [-40, -10, 20, 50], [0, 25, 65, 100]))
-    : 35   // sin Lynch válido (EPS negativo): leve penalización
+    : MISSING_DATA_SCORE
 
-  // Upside de analistas: requiere al menos 3 analistas para ser señal confiable
-  const upsideScore = (s.analystTarget > 0 && s.analystCount >= 3)
+  const upsideScore = (s.analystTarget > 0 && s.analystCount >= MIN_ANALYST_COUNT)
     ? clamp(lerp(s.upsideToTarget, [-10, 0, 15, 35], [0, 20, 60, 100]))
     : s.analystTarget > 0
-      ? clamp(lerp(s.upsideToTarget, [-10, 0, 15, 35], [0, 20, 60, 100])) * 0.6  // 1-2 analistas: señal débil
-      : 35
+      ? clamp(lerp(s.upsideToTarget, [-10, 0, 15, 35], [0, 20, 60, 100])) * WEAK_ANALYST_FACTOR
+      : MISSING_DATA_SCORE
 
   const priceScore = clamp(
     pfcfScore     * 0.30 +
@@ -255,26 +255,26 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   )
   // Lista para comprar cuando calidad, precio Y descuento de mercado confluyen
   const buyReady =
-    qualityScore >= 65 &&
-    priceScore   >= 45 &&
-    s.dropFrom52w <= -10
+    qualityScore >= BUY_READY_QUALITY_MIN &&
+    priceScore   >= BUY_READY_PRICE_MIN   &&
+    s.dropFrom52w <= BUY_READY_DROP_MAX
 
   // ── Grade ─────────────────────────────────────────────────────────────────
   const grade =
-    finalScore >= 85 ? "A+" :
-    finalScore >= 70 ? "A"  :
-    finalScore >= 55 ? "B"  :
-    finalScore >= 40 ? "C"  :
-    finalScore >= 25 ? "D"  : "F"
+    finalScore >= GRADE_A_PLUS ? "A+" :
+    finalScore >= GRADE_A      ? "A"  :
+    finalScore >= GRADE_B      ? "B"  :
+    finalScore >= GRADE_C      ? "C"  :
+    finalScore >= GRADE_D      ? "D"  : "F"
 
   // ── Fortalezas y debilidades ──────────────────────────────────────────────
   const strengths: string[] = []
   const weaknesses: string[] = []
 
-  if (s.roic * 100 >= 15)          strengths.push(`ROIC ${(s.roic * 100).toFixed(0)}% — genera valor económico real por encima del costo de capital`)
-  if (s.roe * 100 >= 20)           strengths.push(`ROE ${(s.roe * 100).toFixed(0)}% — retorno excepcional sobre patrimonio`)
-  if (s.grossMargin * 100 >= 50)   strengths.push(`Margen bruto ${(s.grossMargin * 100).toFixed(0)}% — fuerte pricing power vs su sector`)
-  if (s.operatingMargin * 100 >= 22) strengths.push(`Margen operativo ${(s.operatingMargin * 100).toFixed(0)}% — eficiencia operativa alta`)
+  if (s.roic * 100 >= adjSector.roicBp[2])            strengths.push(`ROIC ${(s.roic * 100).toFixed(0)}% — genera valor económico real por encima del costo de capital`)
+  if (s.roe * 100 >= adjSector.roeBp[2])              strengths.push(`ROE ${(s.roe * 100).toFixed(0)}% — retorno excepcional sobre patrimonio`)
+  if (s.grossMargin * 100 >= adjSector.grossMarginBp[2]) strengths.push(`Margen bruto ${(s.grossMargin * 100).toFixed(0)}% — fuerte pricing power vs su sector`)
+  if (s.operatingMargin * 100 >= adjSector.operatingMarginBp[2]) strengths.push(`Margen operativo ${(s.operatingMargin * 100).toFixed(0)}% — eficiencia operativa alta`)
   if (hasNetCash)                  strengths.push(`Posición de cash neta — más cash que deuda ($${(s.totalCash / 1e9).toFixed(1)}B vs $${(s.totalDebt / 1e9).toFixed(1)}B)`)
   else if (de <= 0.5)              strengths.push("Balance limpio — deuda muy baja")
   if (!isFinancial && netDebtToEbitda > 0 && netDebtToEbitda <= 1.5) strengths.push(`Net Debt/EBITDA ${netDebtToEbitda.toFixed(1)}x — deuda muy manejable`)
@@ -286,9 +286,9 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   else if (s.upsideToTarget >= 20)                    strengths.push(`+${s.upsideToTarget.toFixed(0)}% upside según analistas`)
   if (s.earningsGrowth * 100 >= 15) strengths.push(`Crecimiento EPS ${(s.earningsGrowth * 100).toFixed(0)}% — momentum de ganancias`)
 
-  if (s.roic * 100 < 8 && s.roic > 0) weaknesses.push(`ROIC ${(s.roic * 100).toFixed(0)}% — posiblemente por debajo del costo de capital`)
-  if (s.roe * 100 < 10)            weaknesses.push(`ROE ${(s.roe * 100).toFixed(0)}% — retorno bajo sobre patrimonio`)
-  if (s.grossMargin * 100 < 30)    weaknesses.push(`Margen bruto ${(s.grossMargin * 100).toFixed(0)}% — sin poder de fijación de precios`)
+  if (s.roic > 0 && s.roic * 100 < adjSector.roicBp[1])       weaknesses.push(`ROIC ${(s.roic * 100).toFixed(0)}% — posiblemente por debajo del costo de capital`)
+  if (s.roe * 100 < adjSector.roeBp[1])                       weaknesses.push(`ROE ${(s.roe * 100).toFixed(0)}% — retorno bajo sobre patrimonio`)
+  if (s.grossMargin * 100 < adjSector.grossMarginBp[1])        weaknesses.push(`Margen bruto ${(s.grossMargin * 100).toFixed(0)}% — sin poder de fijación de precios`)
   if (s.freeCashflow > 0 && s.fcfMargin * 100 < 5) weaknesses.push(`FCF margin ${(s.fcfMargin * 100).toFixed(1)}% — genera poco cash libre por cada dólar de revenue`)
   if (!isFinancial && de > 2)      weaknesses.push(`D/E ${de.toFixed(1)}x — deuda elevada, riesgo financiero`)
   if (!isFinancial && netDebtToEbitda >= 4) weaknesses.push(`Net Debt/EBITDA ${netDebtToEbitda.toFixed(1)}x — deuda excesiva en relación a ganancias`)
@@ -300,7 +300,7 @@ export function scoreStock(s: StockData): ScoreBreakdown {
   if (s.grahamNumber > 0 && s.discountToGraham <= -20) weaknesses.push(`Cotiza ${Math.abs(s.discountToGraham).toFixed(0)}% por encima del Graham Number — sin margen de seguridad`)
   if (s.lynchValue > 0 && s.discountToLynch <= -20)    weaknesses.push(`Cotiza ${Math.abs(s.discountToLynch).toFixed(0)}% por encima del valor Lynch — precio exigente`)
   if (s.earningsGrowth * 100 < 0)  weaknesses.push("EPS decreciendo — el negocio está perdiendo tracción")
-  if (s.netMargin * 100 < 5)       weaknesses.push(`Margen neto ${(s.netMargin * 100).toFixed(0)}% — márgenes muy ajustados`)
+  if (s.netMargin * 100 < adjSector.netMarginBp[1]) weaknesses.push(`Margen neto ${(s.netMargin * 100).toFixed(0)}% — márgenes por debajo de lo esperado para el sector`)
 
   // ── Dividendos ────────────────────────────────────────────────────────────
   let dividendScore: number | null = null

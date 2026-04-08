@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import type { MacroData, PhaseDetection } from "@/lib/macro"
+import { ErrorBoundary } from "@/app/ErrorBoundary"
 
 type EtfData = {
   symbol: string; sector: string; name: string
@@ -207,9 +208,11 @@ export default function Ciclos() {
   const [loading, setLoading]     = useState(true)
 
   useEffect(() => {
+    const controller = new AbortController()
+    const opts = { signal: controller.signal }
     Promise.all([
-      fetch("/api/macro").then(r => r.json()).catch(() => null),
-      fetch("/api/sectors-etf").then(r => r.json()).catch(() => null),
+      fetch("/api/macro",       opts).then(r => r.json()).catch(() => null),
+      fetch("/api/sectors-etf", opts).then(r => r.json()).catch(() => null),
     ]).then(([macroRes, etfRes]) => {
       if (macroRes && !macroRes.error) {
         setMacro(macroRes)
@@ -217,13 +220,15 @@ export default function Ciclos() {
       }
       if (etfRes?.etfs) setEtfs(etfRes.etfs)
       setLoading(false)
-    })
+    }).catch(err => { if (err.name !== "AbortError") setLoading(false) })
+    return () => controller.abort()
   }, [])
 
   const etfBySector = Object.fromEntries(etfs.map(e => [e.sector, e]))
   const phase = PHASES[active]
 
   return (
+    <ErrorBoundary fallback="Error al cargar ciclos económicos">
     <main className="min-h-screen bg-gray-950 text-gray-100">
 
       {/* Header */}
@@ -571,5 +576,6 @@ export default function Ciclos() {
 
       </div>
     </main>
+    </ErrorBoundary>
   )
 }

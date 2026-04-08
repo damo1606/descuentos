@@ -6,6 +6,7 @@ import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS, RUSSEL
 import type { StockData } from "@/lib/yahoo"
 import { scoreStock } from "@/lib/scoring"
 import type { ScoreBreakdown } from "@/lib/scoring"
+import { ErrorBoundary } from "./ErrorBoundary"
 
 type Scored = StockData & { score: ScoreBreakdown }
 
@@ -104,12 +105,14 @@ export default function Home() {
   }
 
   useEffect(() => {
-    fetch("/api/macro")
+    const controller = new AbortController()
+    fetch("/api/macro", { signal: controller.signal })
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (d?.phase) { setPhase(d.phase.phase); setPhaseConf(d.phase.confidence) }
       })
-      .catch(() => {})
+      .catch(err => { if (err.name !== "AbortError") console.warn("[macro]", err) })
+    return () => controller.abort()
   }, [])
 
   async function runScreener() {
@@ -176,6 +179,7 @@ export default function Home() {
   }
 
   return (
+    <ErrorBoundary fallback="Error al cargar el screener">
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="max-w-full mx-auto px-2">
 
@@ -383,5 +387,6 @@ export default function Home() {
         })()}
       </div>
     </main>
+    </ErrorBoundary>
   )
 }

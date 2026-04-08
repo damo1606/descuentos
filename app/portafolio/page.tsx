@@ -12,6 +12,7 @@ import {
   alertTypeLabel, alertThresholdSuffix, GRADE_ORDER,
 } from "@/lib/portfolio"
 import type { PortfolioEntry, WatchEntry, Alert, AlertType } from "@/lib/portfolio"
+import { ErrorBoundary } from "@/app/ErrorBoundary"
 
 type LiveData = StockData & { score: ScoreBreakdown }
 
@@ -213,19 +214,23 @@ export default function PortafolioPage() {
     ...alerts.map(a => a.symbol),
   ]))
 
-  async function fetchSymbol(symbol: string): Promise<LiveData | null> {
+  async function fetchSymbol(symbol: string, signal?: AbortSignal): Promise<LiveData | null> {
     try {
-      const res = await fetch(`/api/stock/${symbol}`)
+      const res = await fetch(`/api/stock/${symbol}`, signal ? { signal } : undefined)
       if (!res.ok) return null
       const d: StockData = await res.json()
       return { ...d, score: scoreStock(d) }
-    } catch { return null }
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return null
+      return null
+    }
   }
 
-  const refreshData = useCallback(async (symbols: string[]) => {
+  const refreshData = useCallback(async (symbols: string[], signal?: AbortSignal) => {
     if (symbols.length === 0) return
     setLoadingSymbols(new Set(symbols))
-    const results = await Promise.all(symbols.map(s => fetchSymbol(s)))
+    const results = await Promise.all(symbols.map(s => fetchSymbol(s, signal)))
+    if (signal?.aborted) return
     setLiveData(prev => {
       const next = new Map(prev)
       symbols.forEach((s, i) => { if (results[i]) next.set(s, results[i]!) })
@@ -236,7 +241,10 @@ export default function PortafolioPage() {
 
   // Auto-fetch al cargar
   useEffect(() => {
-    if (allSymbols.length > 0) refreshData(allSymbols)
+    if (allSymbols.length === 0) return
+    const controller = new AbortController()
+    refreshData(allSymbols, controller.signal)
+    return () => controller.abort()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Alertas: verificar y marcar disparadas ──────────────────────────────────
@@ -273,6 +281,7 @@ export default function PortafolioPage() {
   const totalPnlPct  = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
 
   return (
+    <ErrorBoundary fallback="Error al cargar portafolio">
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="max-w-5xl mx-auto">
 
@@ -573,5 +582,6 @@ export default function PortafolioPage() {
         />
       )}
     </main>
+    </ErrorBoundary>
   )
 }

@@ -8,6 +8,7 @@ import { analyzeForward } from "@/lib/forward"
 import type { StockData } from "@/lib/yahoo"
 import type { ScoreBreakdown } from "@/lib/scoring"
 import type { ForwardAnalysis } from "@/lib/forward"
+import { ErrorBoundary } from "@/app/ErrorBoundary"
 
 type Scored = StockData & { score: ScoreBreakdown; forward: ForwardAnalysis }
 
@@ -96,11 +97,13 @@ export default function Parte1() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [minGrade, setMinGrade] = useState<string>("F")
   const [sectorFilter, setSectorFilter] = useState<string>("all")
+  const runningRef = { current: false }
 
   const universeSymbols = UNIVERSES.find(u => u.key === universe)?.symbols ?? DJIA_SYMBOLS
   const symbols = universe === "sp500" ? universeSymbols.slice(0, limit) : universeSymbols
 
   async function run() {
+    runningRef.current = true
     setLoading(true)
     setRan(false)
     setStocks([])
@@ -112,18 +115,22 @@ export default function Parte1() {
     let done = 0
 
     for (let i = 0; i < symbols.length; i += 5) {
+      if (!runningRef.current) break
       const batch = await Promise.all(symbols.slice(i, i + 5).map(fetchStock))
       batch.forEach(s => { if (s) results.push(s) })
       done += 5
+      if (!runningRef.current) break
       setProgress(Math.round((Math.min(done, symbols.length) / symbols.length) * 100))
       setFetched(results.length)
     }
 
+    if (!runningRef.current) return
     const GRADE_ORDER = ["F", "D", "C", "B", "A", "A+"]
     results.sort((a, b) => b.score.finalScore - a.score.finalScore)
     setStocks(results)
     setLoading(false)
     setRan(true)
+    runningRef.current = false
   }
 
   function handleKey(e: React.KeyboardEvent) {
@@ -149,6 +156,7 @@ export default function Parte1() {
   })
 
   return (
+    <ErrorBoundary fallback="Error al cargar valoración">
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="max-w-5xl mx-auto">
 
@@ -678,5 +686,6 @@ export default function Parte1() {
         )}
       </div>
     </main>
+    </ErrorBoundary>
   )
 }

@@ -6,6 +6,7 @@ import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS, RUSSEL
 import { analyzeForward } from "@/lib/forward"
 import type { StockData } from "@/lib/yahoo"
 import type { ForwardAnalysis } from "@/lib/forward"
+import { ErrorBoundary } from "@/app/ErrorBoundary"
 
 type Analyzed = StockData & { forward: ForwardAnalysis }
 
@@ -92,27 +93,33 @@ export default function Prospectiva() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [gradeFilter, setGradeFilter] = useState("C")
   const [stageFilter, setStageFilter] = useState("all")
+  const runningRef = { current: false }
 
   const universeSymbols = UNIVERSES.find(u => u.key === universe)?.symbols ?? DJIA_SYMBOLS
   const symbols = universe === "sp500" ? universeSymbols.slice(0, limit) : universeSymbols
 
   async function run() {
+    runningRef.current = true
     setLoading(true); setRan(false); setStocks([])
     setProgress(0); setFetched(0); setExpanded(null)
 
     const results: Analyzed[] = []
     let done = 0
     for (let i = 0; i < symbols.length; i += 5) {
+      if (!runningRef.current) break
       const batch = await Promise.all(symbols.slice(i, i + 5).map(fetchStock))
       batch.forEach(s => { if (s) results.push(s) })
       done += 5
+      if (!runningRef.current) break
       setProgress(Math.round((Math.min(done, symbols.length) / symbols.length) * 100))
       setFetched(results.length)
     }
+    if (!runningRef.current) return
     results.sort((a, b) => b.forward.forwardScore - a.forward.forwardScore)
     setStocks(results)
     setLoading(false)
     setRan(true)
+    runningRef.current = false
   }
 
   const stages = ["hypercrecimiento", "expansion", "madurez", "estancamiento", "declive"]
@@ -129,6 +136,7 @@ export default function Prospectiva() {
   })).filter(x => x.count > 0)
 
   return (
+    <ErrorBoundary fallback="Error al cargar prospectiva">
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="max-w-6xl mx-auto">
 
@@ -472,5 +480,6 @@ export default function Prospectiva() {
 
       </div>
     </main>
+    </ErrorBoundary>
   )
 }

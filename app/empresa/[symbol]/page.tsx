@@ -6,6 +6,7 @@ import type { StockData } from "@/lib/yahoo"
 import { scoreStock } from "@/lib/scoring"
 import type { ScoreBreakdown } from "@/lib/scoring"
 import { analyzeForward } from "@/lib/forward"
+import { ErrorBoundary } from "@/app/ErrorBoundary"
 import type { ForwardAnalysis } from "@/lib/forward"
 import { addPosition, addWatch, addAlert, isWatching, getPortfolio } from "@/lib/portfolio"
 
@@ -67,13 +68,15 @@ export default function EmpresaPage() {
   }, [symbol])
 
   useEffect(() => {
+    const controller = new AbortController()
     setLoading(true)
     setError(false)
-    fetch(`/api/stock/${symbol}`)
+    fetch(`/api/stock/${symbol}`, { signal: controller.signal })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then((d: StockData) => setData({ ...d, score: scoreStock(d), forward: analyzeForward(d) }))
-      .catch(() => setError(true))
+      .catch(err => { if (err.name !== "AbortError") setError(true) })
       .finally(() => setLoading(false))
+    return () => controller.abort()
   }, [symbol])
 
   if (loading) return (
@@ -92,6 +95,7 @@ export default function EmpresaPage() {
   const de = data.debtToEquity / 100
 
   return (
+    <ErrorBoundary fallback={`Error al cargar la empresa ${symbol}`}>
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="max-w-5xl mx-auto">
 
@@ -300,5 +304,6 @@ export default function EmpresaPage() {
 
       </div>
     </main>
+    </ErrorBoundary>
   )
 }
