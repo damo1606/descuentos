@@ -6,9 +6,11 @@ import { DJIA_SYMBOLS, SP500_SYMBOLS, NASDAQ100_SYMBOLS, RUSSELL_SYMBOLS } from 
 import type { StockData } from "@/lib/yahoo"
 import { scoreStock } from "@/lib/scoring"
 import type { ScoreBreakdown } from "@/lib/scoring"
+import { runBrain } from "@/lib/brain"
+import type { BrainOutput, MacroContext } from "@/lib/brain"
 import { ErrorBoundary } from "../ErrorBoundary"
 
-type Scored = StockData & { score: ScoreBreakdown }
+type Scored = StockData & { score: ScoreBreakdown; brain: BrainOutput }
 type Signal = ScoreBreakdown["signal"]
 
 const SIGNAL_ORDER: Signal[] = ["Compra Fuerte", "Compra", "Mantener", "Venta", "Venta Fuerte"]
@@ -57,12 +59,14 @@ const SIGNAL_STYLE: Record<Signal, {
   },
 }
 
-async function fetchStock(symbol: string): Promise<Scored | null> {
+async function fetchStock(symbol: string, macro?: MacroContext): Promise<Scored | null> {
   try {
     const res = await fetch(`/api/stock/${symbol}`)
     if (!res.ok) return null
     const data: StockData = await res.json()
-    return { ...data, score: scoreStock(data) }
+    const score = scoreStock(data)
+    const brain = runBrain({ score, stock: data, macro })
+    return { ...data, score, brain }
   } catch {
     return null
   }
@@ -99,12 +103,26 @@ export default function SenalesPage() {
   const [progress, setProgress] = useState(0)
   const [universe, setUniverse] = useState<"dia" | "sp500" | "nasdaq" | "russell">("dia")
   const [filter, setFilter]     = useState<Signal | "Todas">("Todas")
+  const [macroCtx, setMacroCtx] = useState<MacroContext | null>(null)
 
   async function run() {
     setLoading(true)
     setRan(false)
     setStocks([])
     setProgress(0)
+
+    // Obtener contexto macro una sola vez antes del scan
+    let macro: MacroContext | undefined
+    try {
+      const macroRes = await fetch("/api/macro")
+      if (macroRes.ok) {
+        const macroData = await macroRes.json()
+        if (macroData?.detection?.phase) {
+          macro = { phase: macroData.detection.phase, confidence: macroData.detection.confidence }
+          setMacroCtx(macro)
+        }
+      }
+    } catch { /* sin macro — el cerebro opera solo con fundamentales */ }
 
     const symbols =
       universe === "nasdaq"  ? NASDAQ100_SYMBOLS :
@@ -118,7 +136,7 @@ export default function SenalesPage() {
 
     for (let i = 0; i < symbols.length; i += batchSize) {
       const batch = symbols.slice(i, i + batchSize)
-      const fetched = await Promise.all(batch.map(fetchStock))
+      const fetched = await Promise.all(batch.map(s => fetchStock(s, macro)))
       fetched.forEach(s => { if (s) results.push(s) })
       done += batch.length
       setProgress(Math.round((done / symbols.length) * 100))
@@ -129,7 +147,7 @@ export default function SenalesPage() {
     setRan(true)
   }
 
-  // Agrupar por señal
+  // Agrupar por señal del cerebro (finalSignal)
   const bySignal: Record<Signal, Scored[]> = {
     "Compra Fuerte": [],
     "Compra":        [],
@@ -138,7 +156,7 @@ export default function SenalesPage() {
     "Venta Fuerte":  [],
   }
   for (const s of stocks) {
-    bySignal[s.score.signal].push(s)
+    bySignal[s.brain.finalSignal].push(s)
   }
 
   // Ordenar dentro de cada grupo por finalScore descendente
@@ -198,6 +216,23 @@ export default function SenalesPage() {
                   style={{ width: `${progress}%` }}
                 />
               </div>
+            </div>
+          )}
+
+          {macroCtx && !loading && (
+            <div className="ml-auto flex items-center gap-2 text-xs">
+              <span className="text-gray-600">Cerebro activo —</span>
+              <span className={`px-2 py-0.5 rounded font-semibold ${
+                macroCtx.phase === "expansion" ? "bg-green-900/60 text-green-300" :
+                macroCtx.phase === "recovery"  ? "bg-blue-900/60 text-blue-300"   :
+                macroCtx.phase === "late"      ? "bg-amber-900/60 text-amber-300" :
+                "bg-red-900/60 text-red-300"
+              }`}>
+                {macroCtx.phase === "expansion" ? "Expansión" :
+                 macroCtx.phase === "recovery"  ? "Recuperación" :
+                 macroCtx.phase === "late"      ? "Desaceleración" : "Recesión"}
+              </span>
+              <span className="text-gray-600">{macroCtx.confidence}% confianza</span>
             </div>
           )}
         </div>
@@ -279,6 +314,7 @@ export default function SenalesPage() {
                       <th className="text-right px-3 py-2.5">Calidad</th>
                       <th className="text-right px-3 py-2.5">Precio</th>
                       <th className="text-right px-3 py-2.5">Final</th>
+                      <th className="text-right px-3 py-2.5">Ciclo</th>
                       <th className="text-right px-3 py-2.5">Caída 52w</th>
                       <th className="text-right px-3 py-2.5">P/FCF</th>
                       <th className="text-right px-3 py-2.5">Graham</th>
@@ -289,15 +325,25 @@ export default function SenalesPage() {
                   <tbody className="divide-y divide-gray-800/60">
                     {items.map(stock => {
                       const sc = stock.score
+                      const br = stock.brain
+                      const heatColor = br.sectorHeat >= 8 ? "text-emerald-400" : br.sectorHeat >= 5 ? "text-gray-400" : "text-red-400"
                       return (
                         <tr key={stock.symbol} className="hover:bg-gray-800/40 transition-colors">
                           <td className="px-4 py-3">
-                            <Link
-                              href={`/empresa/${stock.symbol}`}
-                              className="font-bold text-blue-400 hover:text-blue-300"
-                            >
-                              {stock.symbol}
-                            </Link>
+                            <div className="flex items-center gap-1.5">
+                              <Link
+                                href={`/empresa/${stock.symbol}`}
+                                className="font-bold text-blue-400 hover:text-blue-300"
+                              >
+                                {stock.symbol}
+                              </Link>
+                              {br.signalAdjusted && (
+                                <span title={br.macroAdjustment ?? "Señal ajustada por ciclo macro"}
+                                  className="text-[10px] bg-violet-900/60 text-violet-300 border border-violet-800/60 px-1 py-0.5 rounded font-bold">
+                                  ⟳ macro
+                                </span>
+                              )}
+                            </div>
                             <div className="text-xs text-gray-500 truncate max-w-[140px]">{stock.company}</div>
                           </td>
                           <td className="px-3 py-3 text-gray-400 text-xs">{stock.sector}</td>
@@ -313,6 +359,11 @@ export default function SenalesPage() {
                             </span>
                           </td>
                           <td className="px-3 py-3 text-right font-mono text-white font-bold">{sc.finalScore}</td>
+                          <td className="px-3 py-3 text-right">
+                            <span className={`font-mono font-bold ${heatColor}`} title={`Sector heat en fase actual: ${br.sectorHeat}/10`}>
+                              {br.sectorHeat > 0 ? `${br.sectorHeat}/10` : "—"}
+                            </span>
+                          </td>
                           <td className="px-3 py-3 text-right">
                             <span className={`font-mono font-bold ${stock.dropFrom52w <= -15 ? "text-green-400" : stock.dropFrom52w <= -5 ? "text-yellow-300" : "text-gray-400"}`}>
                               {stock.dropFrom52w.toFixed(1)}%
@@ -332,7 +383,7 @@ export default function SenalesPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-xs text-gray-400 max-w-[260px]">
-                            {sc.signalReason}
+                            {br.finalReason}
                           </td>
                         </tr>
                       )

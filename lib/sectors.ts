@@ -6,6 +6,8 @@
 // Breakpoints: [terrible, mediocre, bueno, excelente] → output [0, 25, 65, 100]
 // Todos los valores en % (ej: 40 = 40%)
 
+export type CyclePhase = "recovery" | "expansion" | "late" | "recession"
+
 export type SectorConfig = {
   label: string
   yahooNames: string[]
@@ -24,6 +26,9 @@ export type SectorConfig = {
   grossMarginWeight:     number
   operatingMarginWeight: number
   netMarginWeight:       number
+  // Atractivo del sector en cada fase del ciclo económico (1-10)
+  // 1-4 = headwind, 5-7 = neutral, 8-10 = tailwind
+  cycleScores: Record<CyclePhase, number>
 }
 
 const SECTORS: SectorConfig[] = [
@@ -43,6 +48,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.45,
     operatingMarginWeight: 0.35,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 5, expansion: 9, late: 3, recession: 5 },
   },
   {
     label: "Salud",
@@ -60,6 +66,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.40,
     operatingMarginWeight: 0.40,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 5, expansion: 5, late: 8, recession: 9 },
   },
   {
     label: "Servicios Financieros",
@@ -78,6 +85,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.15,
     operatingMarginWeight: 0.45,
     netMarginWeight:       0.40,
+    cycleScores: { recovery: 9, expansion: 8, late: 5, recession: 2 },
   },
   {
     label: "Consumo Defensivo",
@@ -94,6 +102,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.45,
     operatingMarginWeight: 0.35,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 3, expansion: 3, late: 8, recession: 9 },
   },
   {
     label: "Consumo Cíclico",
@@ -110,6 +119,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.40,
     operatingMarginWeight: 0.40,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 8, expansion: 8, late: 3, recession: 2 },
   },
   {
     label: "Industrial",
@@ -127,6 +137,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.35,
     operatingMarginWeight: 0.45,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 8, expansion: 8, late: 5, recession: 2 },
   },
   {
     label: "Energía",
@@ -143,6 +154,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.35,
     operatingMarginWeight: 0.45,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 4, expansion: 5, late: 9, recession: 2 },
   },
   {
     label: "Comunicaciones",
@@ -159,6 +171,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.45,
     operatingMarginWeight: 0.35,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 5, expansion: 8, late: 5, recession: 5 },
   },
   {
     label: "Utilities",
@@ -176,6 +189,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.30,
     operatingMarginWeight: 0.50,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 2, expansion: 2, late: 5, recession: 9 },
   },
   {
     label: "Materiales",
@@ -192,6 +206,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.35,
     operatingMarginWeight: 0.45,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 5, expansion: 8, late: 8, recession: 2 },
   },
   {
     label: "Inmobiliario",
@@ -208,6 +223,7 @@ const SECTORS: SectorConfig[] = [
     grossMarginWeight:     0.30,
     operatingMarginWeight: 0.50,
     netMarginWeight:       0.20,
+    cycleScores: { recovery: 8, expansion: 5, late: 3, recession: 5 },
   },
 ]
 
@@ -226,8 +242,15 @@ const DEFAULT: SectorConfig = {
   grossMarginWeight:     0.45,
   operatingMarginWeight: 0.35,
   netMarginWeight:       0.20,
+  cycleScores: { recovery: 5, expansion: 5, late: 5, recession: 5 },
 }
 
 export function getSectorConfig(sector: string): SectorConfig {
   return SECTORS.find(s => s.yahooNames.includes(sector)) ?? DEFAULT
+}
+
+// Retorna el heat score (1-10) del sector para la fase actual del ciclo
+export function getSectorHeat(yahooSector: string, phase: CyclePhase): number {
+  const cfg = getSectorConfig(yahooSector)
+  return cfg.cycleScores[phase]
 }

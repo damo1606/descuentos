@@ -8,9 +8,11 @@ import type { ScoreBreakdown } from "@/lib/scoring"
 import { analyzeForward } from "@/lib/forward"
 import { ErrorBoundary } from "@/app/ErrorBoundary"
 import type { ForwardAnalysis } from "@/lib/forward"
+import { runBrain } from "@/lib/brain"
+import type { BrainOutput, MacroContext } from "@/lib/brain"
 import { addPosition, addWatch, addAlert, isWatching, getPortfolio } from "@/lib/portfolio"
 
-type FullData = StockData & { score: ScoreBreakdown; forward: ForwardAnalysis }
+type FullData = StockData & { score: ScoreBreakdown; forward: ForwardAnalysis; brain: BrainOutput }
 
 function pct(v: number, dec = 1) { return `${v >= 0 ? "+" : ""}${v.toFixed(dec)}%` }
 function usd(v: number) { return v > 0 ? `$${v.toFixed(2)}` : "—" }
@@ -71,9 +73,21 @@ export default function EmpresaPage() {
     const controller = new AbortController()
     setLoading(true)
     setError(false)
-    fetch(`/api/stock/${symbol}`, { signal: controller.signal })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then((d: StockData) => setData({ ...d, score: scoreStock(d), forward: analyzeForward(d) }))
+    Promise.all([
+      fetch(`/api/stock/${symbol}`, { signal: controller.signal }).then(r => r.ok ? r.json() : Promise.reject()),
+      fetch("/api/macro", { signal: controller.signal }).then(r => r.ok ? r.json() : null).catch(() => null),
+    ])
+      .then(([d, macroData]: [StockData, unknown]) => {
+        const score   = scoreStock(d)
+        const forward = analyzeForward(d)
+        let macro: MacroContext | undefined
+        const md = macroData as { detection?: { phase?: string; confidence?: number } } | null
+        if (md?.detection?.phase) {
+          macro = { phase: md.detection.phase as MacroContext["phase"], confidence: md.detection.confidence ?? 50 }
+        }
+        const brain = runBrain({ score, stock: d, macro, forward })
+        setData({ ...d, score, forward, brain })
+      })
       .catch(err => { if (err.name !== "AbortError") setError(true) })
       .finally(() => setLoading(false))
     return () => controller.abort()
@@ -91,7 +105,7 @@ export default function EmpresaPage() {
     </main>
   )
 
-  const { score, forward } = data
+  const { score, forward, brain } = data
   const de = data.debtToEquity / 100
 
   return (
@@ -176,7 +190,7 @@ export default function EmpresaPage() {
         )}
 
         {/* Veredicto */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4">
           <p className="text-gray-300 text-sm">{score.verdict}</p>
           <div className="flex flex-wrap gap-2 mt-3">
             {score.strengths.map((s, i) => (
@@ -187,6 +201,85 @@ export default function EmpresaPage() {
             ))}
           </div>
         </div>
+
+        {/* Veredicto del Cerebro */}
+        {(() => {
+          const signalColors: Record<string, { badge: string; border: string; header: string }> = {
+            "Compra Fuerte": { badge: "bg-emerald-500 text-white", border: "border-emerald-800/60", header: "text-emerald-400" },
+            "Compra":        { badge: "bg-green-600 text-white",   border: "border-green-800/60",   header: "text-green-400"   },
+            "Mantener":      { badge: "bg-gray-600 text-white",    border: "border-gray-700/60",    header: "text-gray-300"    },
+            "Venta":         { badge: "bg-orange-600 text-white",  border: "border-orange-800/60",  header: "text-orange-400"  },
+            "Venta Fuerte":  { badge: "bg-red-700 text-white",     border: "border-red-800/60",     header: "text-red-400"     },
+          }
+          const sc = signalColors[brain.finalSignal] ?? signalColors["Mantener"]
+          const fitIcon = brain.cycleFit === "tailwind" ? "↑" : brain.cycleFit === "headwind" ? "↓" : "→"
+          const fitColor = brain.cycleFit === "tailwind" ? "text-emerald-400" : brain.cycleFit === "headwind" ? "text-red-400" : "text-gray-500"
+          return (
+            <div className={`rounded-xl border ${sc.border} bg-gray-900/80 p-4 mb-6`}>
+              {/* Header del cerebro */}
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Veredicto del Cerebro</span>
+                  {brain.signalAdjusted && (
+                    <span className="text-[10px] bg-violet-900/60 text-violet-300 border border-violet-800/60 px-1.5 py-0.5 rounded font-bold">
+                      ⟳ ajustado por ciclo
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {brain.signalAdjusted && (
+                    <span className="text-xs text-gray-600 line-through">{brain.baseSignal}</span>
+                  )}
+                  <span className={`text-sm font-black px-3 py-1 rounded-lg ${sc.badge}`}>
+                    {brain.finalSignal}
+                  </span>
+                </div>
+              </div>
+
+              {/* Razón final */}
+              <p className="text-xs text-gray-400 mb-3 leading-relaxed">{brain.finalReason}</p>
+
+              {/* Factores */}
+              <div className="space-y-1.5">
+                {brain.factors.map((f, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className={`shrink-0 text-xs font-bold mt-0.5 ${
+                      f.impact === "positive" ? "text-emerald-400" :
+                      f.impact === "negative" ? "text-red-400" : "text-gray-500"
+                    }`}>
+                      {f.impact === "positive" ? "▲" : f.impact === "negative" ? "▼" : "●"}
+                    </span>
+                    <div>
+                      <span className="text-xs font-semibold text-gray-300">{f.name}: </span>
+                      <span className="text-xs text-gray-500">{f.description}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Footer: ciclo + confianza */}
+              <div className="mt-3 pt-3 border-t border-gray-800/60 flex flex-wrap items-center gap-4 text-xs">
+                {brain.cycleFit !== "unknown" && (
+                  <span className={`font-semibold ${fitColor}`}>
+                    {fitIcon} Ciclo: {brain.cycleFit === "tailwind" ? "Viento de cola" : brain.cycleFit === "headwind" ? "Viento en contra" : "Neutral"} · Heat {brain.sectorHeat}/10
+                  </span>
+                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  <span className="text-gray-600">Confianza del cerebro</span>
+                  <div className="w-24 bg-gray-800 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full ${brain.confidence >= 75 ? "bg-emerald-500" : brain.confidence >= 55 ? "bg-yellow-500" : "bg-gray-500"}`}
+                      style={{ width: `${brain.confidence}%` }}
+                    />
+                  </div>
+                  <span className="font-mono font-bold text-gray-300">{brain.confidence}%</span>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
+        <div className="mb-6" />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 
