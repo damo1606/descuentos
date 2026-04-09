@@ -306,6 +306,129 @@ export default function Ciclos() {
           </div>
         )}
 
+        {/* Dashboard de indicadores FRED */}
+        {macro && (() => {
+          type IndGroup = {
+            title: string
+            color: string
+            items: Array<{ key: keyof typeof macro; label: string }>
+          }
+          const GROUPS: IndGroup[] = [
+            {
+              title: "Mercado Laboral",
+              color: "text-blue-400",
+              items: [
+                { key: "nfp",          label: "Nóminas YoY" },
+                { key: "joblessClaims",label: "Sol. desempleo" },
+                { key: "u6Rate",       label: "Desempleo U-6" },
+                { key: "jolts",        label: "Vacantes JOLTS" },
+              ],
+            },
+            {
+              title: "Crédito y Condiciones",
+              color: "text-orange-400",
+              items: [
+                { key: "hySpread",     label: "HY Spread" },
+                { key: "igSpread",     label: "IG Spread" },
+                { key: "creditDelinq", label: "Morosidad tarjetas" },
+                { key: "finStress",    label: "Estrés financiero" },
+              ],
+            },
+            {
+              title: "Inflación Desagregada",
+              color: "text-red-400",
+              items: [
+                { key: "coreInflation",label: "CPI Core" },
+                { key: "pce",          label: "PCE" },
+                { key: "corePce",      label: "PCE Core" },
+                { key: "inflExp5y",    label: "Inf. Exp. 5Y" },
+                { key: "inflExp10y",   label: "Inf. Exp. 10Y" },
+              ],
+            },
+            {
+              title: "Curva de Tasas",
+              color: "text-purple-400",
+              items: [
+                { key: "yc10y3m",    label: "Spread 10Y-3M" },
+                { key: "yieldCurve", label: "Spread 10Y-2Y" },
+                { key: "treasury2y", label: "Treasury 2Y" },
+                { key: "treasury5y", label: "Treasury 5Y" },
+                { key: "treasury10y",label: "Treasury 10Y" },
+                { key: "treasury30y",label: "Treasury 30Y" },
+              ],
+            },
+            {
+              title: "Economía Real",
+              color: "text-emerald-400",
+              items: [
+                { key: "indProd",      label: "Prod. Industrial" },
+                { key: "capUtil",      label: "Utiliz. Capacidad" },
+                { key: "retailSales",  label: "Ventas Minoristas" },
+                { key: "housStarts",   label: "Inicio Construcc." },
+                { key: "buildPermits", label: "Permisos Construcc." },
+                { key: "consumerSent", label: "Confianza Consumidor" },
+              ],
+            },
+            {
+              title: "Dinero y Crédito",
+              color: "text-cyan-400",
+              items: [
+                { key: "m2",       label: "M2" },
+                { key: "ciCredit", label: "Crédito C&I" },
+                { key: "bizLoans", label: "Préstamos empresas" },
+              ],
+            },
+          ]
+
+          return (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Panel Macro — FRED</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">32 series en tiempo real · Actualiza cada 12h</p>
+                </div>
+                <span className="text-[10px] text-gray-600 font-mono">{macro.fetchedAt?.substring(0, 10)}</span>
+              </div>
+              <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {GROUPS.map(g => (
+                  <div key={g.title} className="bg-gray-950/50 rounded-lg border border-gray-800/60 overflow-hidden">
+                    <div className={`px-3 py-2 border-b border-gray-800/60 text-xs font-bold uppercase tracking-wider ${g.color}`}>
+                      {g.title}
+                    </div>
+                    <div className="divide-y divide-gray-800/40">
+                      {g.items.map(({ key, label }) => {
+                        const d = macro[key] as import("@/lib/macro").MacroIndicator | null
+                        if (!d) return (
+                          <div key={key as string} className="px-3 py-2 flex items-center justify-between">
+                            <span className="text-xs text-gray-600">{label}</span>
+                            <span className="text-xs text-gray-700">—</span>
+                          </div>
+                        )
+                        const trendColor = d.trend === "up" ? "text-green-400" : d.trend === "down" ? "text-red-400" : "text-gray-400"
+                        const trendIcon  = d.trend === "up" ? "↑" : d.trend === "down" ? "↓" : "→"
+                        return (
+                          <div key={key as string} className="px-3 py-2 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-xs text-gray-500 truncate">{label}</div>
+                              <div className="text-[10px] text-gray-700">{d.date?.substring(0, 7)}</div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className={`text-sm font-bold font-mono ${trendColor}`}>
+                                {d.value.toFixed(2)}{d.unit.startsWith("%") ? "%" : ""}
+                              </span>
+                              <span className={`text-xs ${trendColor}`}>{trendIcon}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Wheel + Phase detail */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
 
