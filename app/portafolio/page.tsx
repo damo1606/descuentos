@@ -190,6 +190,9 @@ function AddAlertModal({ onClose, onAdd, defaultSymbol = "" }: {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
+type PortSortCol  = "symbol" | "qty" | "buy" | "current" | "pnl" | "pnlpct" | "grade" | "buyscore"
+type WatchSortCol = "symbol" | "current" | "target" | "vstarget" | "drop" | "grade" | "buyscore"
+
 export default function PortafolioPage() {
   const [tab, setTab]             = useState<"portfolio" | "watch" | "alerts">("portfolio")
   const [portfolio, setPortfolio] = useState<PortfolioEntry[]>([])
@@ -199,6 +202,22 @@ export default function PortafolioPage() {
   const [loadingSymbols, setLoadingSymbols] = useState<Set<string>>(new Set())
   const [showAddPos, setShowAddPos]   = useState(false)
   const [showAddAlert, setShowAddAlert] = useState(false)
+  const [portSort, setPortSort]   = useState<PortSortCol>("pnlpct")
+  const [portDir, setPortDir]     = useState<"asc" | "desc">("desc")
+  const [watchSort, setWatchSort] = useState<WatchSortCol>("buyscore")
+  const [watchDir, setWatchDir]   = useState<"asc" | "desc">("desc")
+
+  function handlePortSort(col: PortSortCol) {
+    if (portSort === col) setPortDir(d => d === "desc" ? "asc" : "desc")
+    else { setPortSort(col); setPortDir("desc") }
+  }
+  function handleWatchSort(col: WatchSortCol) {
+    if (watchSort === col) setWatchDir(d => d === "desc" ? "asc" : "desc")
+    else { setWatchSort(col); setWatchDir("desc") }
+  }
+  function sortIcon(active: boolean, dir: "asc" | "desc") {
+    return <span className="text-[10px]">{active ? (dir === "desc" ? "▼" : "▲") : "↕"}</span>
+  }
 
   // Cargar desde localStorage al montar
   useEffect(() => {
@@ -273,6 +292,24 @@ export default function PortafolioPage() {
     const pnlUsd = current !== null ? current - cost : null
     const pnlPct = pnlUsd !== null && cost > 0 ? (pnlUsd / cost) * 100 : null
     return { ...e, live, cost, current, pnlUsd, pnlPct }
+  })
+
+  const GO = ["F","D","C","B","A","A+"]
+
+  const portfolioSorted = [...portfolioWithLive].sort((a, b) => {
+    let va: number, vb: number
+    switch (portSort) {
+      case "symbol":   return portDir === "desc" ? b.symbol.localeCompare(a.symbol) : a.symbol.localeCompare(b.symbol)
+      case "qty":      va = a.qty;                              vb = b.qty;                              break
+      case "buy":      va = a.buyPrice;                         vb = b.buyPrice;                         break
+      case "current":  va = a.live?.currentPrice ?? 0;          vb = b.live?.currentPrice ?? 0;          break
+      case "pnl":      va = a.pnlUsd ?? 0;                      vb = b.pnlUsd ?? 0;                      break
+      case "pnlpct":   va = a.pnlPct ?? 0;                      vb = b.pnlPct ?? 0;                      break
+      case "grade":    va = GO.indexOf(a.live?.score.grade ?? "F"); vb = GO.indexOf(b.live?.score.grade ?? "F"); break
+      case "buyscore": va = a.live?.score.buyScore ?? 0;         vb = b.live?.score.buyScore ?? 0;       break
+      default:         va = 0; vb = 0
+    }
+    return portDir === "desc" ? vb - va : va - vb
   })
 
   const totalCost    = portfolioWithLive.reduce((s, e) => s + e.cost, 0)
@@ -354,19 +391,27 @@ export default function PortafolioPage() {
                 <table className="w-full text-sm whitespace-nowrap">
                   <thead>
                     <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
-                      <th className="pb-2 pr-6">Empresa</th>
-                      <th className="pb-2 pr-4 text-right">Qty</th>
-                      <th className="pb-2 pr-4 text-right">Compra</th>
-                      <th className="pb-2 pr-4 text-right">Actual</th>
-                      <th className="pb-2 pr-4 text-right">P&amp;L $</th>
-                      <th className="pb-2 pr-4 text-right">P&amp;L %</th>
-                      <th className="pb-2 pr-4">Grado</th>
-                      <th className="pb-2 pr-4 text-right">Buy Score</th>
+                      {([
+                        { col: "symbol"  as PortSortCol, label: "Empresa",    align: "left"  },
+                        { col: "qty"     as PortSortCol, label: "Qty",         align: "right" },
+                        { col: "buy"     as PortSortCol, label: "Compra",      align: "right" },
+                        { col: "current" as PortSortCol, label: "Actual",      align: "right" },
+                        { col: "pnl"     as PortSortCol, label: "P&L $",       align: "right" },
+                        { col: "pnlpct"  as PortSortCol, label: "P&L %",       align: "right" },
+                        { col: "grade"   as PortSortCol, label: "Grado",       align: "left"  },
+                        { col: "buyscore"as PortSortCol, label: "Buy Score",   align: "right" },
+                      ]).map(({ col, label, align }) => (
+                        <th key={col}
+                          onClick={() => handlePortSort(col)}
+                          className={`pb-2 pr-4 text-${align} cursor-pointer select-none hover:text-gray-300 transition-colors ${portSort === col ? "text-white" : ""}`}>
+                          {label} {sortIcon(portSort === col, portDir)}
+                        </th>
+                      ))}
                       <th className="pb-2"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {portfolioWithLive.map(e => (
+                    {portfolioSorted.map(e => (
                       <tr key={e.id} className="border-b border-gray-800/50 hover:bg-gray-900/50">
                         <td className="py-3 pr-6">
                           <Link href={`/empresa/${e.symbol}`} className="hover:opacity-80">
@@ -410,7 +455,27 @@ export default function PortafolioPage() {
         )}
 
         {/* ── TAB: SEGUIMIENTO ─────────────────────────────────────────────── */}
-        {tab === "watch" && (
+        {tab === "watch" && (() => {
+          const watchSorted = [...watchList].sort((a, b) => {
+            const la = liveData.get(a.symbol)
+            const lb = liveData.get(b.symbol)
+            let va: number, vb: number
+            switch (watchSort) {
+              case "symbol":   return watchDir === "desc" ? b.symbol.localeCompare(a.symbol) : a.symbol.localeCompare(b.symbol)
+              case "current":  va = la?.currentPrice ?? 0;   vb = lb?.currentPrice ?? 0;   break
+              case "target":   va = a.targetPrice ?? 0;       vb = b.targetPrice ?? 0;       break
+              case "vstarget":
+                va = (la && a.targetPrice) ? ((a.targetPrice - la.currentPrice) / la.currentPrice) * 100 : 0
+                vb = (lb && b.targetPrice) ? ((b.targetPrice - lb.currentPrice) / lb.currentPrice) * 100 : 0
+                break
+              case "drop":     va = la?.dropFrom52w ?? 0;    vb = lb?.dropFrom52w ?? 0;    break
+              case "grade":    va = GO.indexOf(la?.score.grade ?? "F"); vb = GO.indexOf(lb?.score.grade ?? "F"); break
+              case "buyscore": va = la?.score.buyScore ?? 0; vb = lb?.score.buyScore ?? 0; break
+              default:         va = 0; vb = 0
+            }
+            return watchDir === "desc" ? vb - va : va - vb
+          })
+          return (
           <div>
             <div className="flex justify-between items-center mb-4">
               <span className="text-sm text-gray-400">{watchList.length} en seguimiento</span>
@@ -432,19 +497,27 @@ export default function PortafolioPage() {
                 <table className="w-full text-sm whitespace-nowrap">
                   <thead>
                     <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
-                      <th className="pb-2 pr-6">Empresa</th>
-                      <th className="pb-2 pr-4 text-right">Actual</th>
-                      <th className="pb-2 pr-4 text-right">Target</th>
-                      <th className="pb-2 pr-4 text-right">vs Target</th>
-                      <th className="pb-2 pr-4 text-right">Caída 52w</th>
-                      <th className="pb-2 pr-4">Grado</th>
-                      <th className="pb-2 pr-4 text-right">Buy Score</th>
+                      {([
+                        { col: "symbol"  as WatchSortCol, label: "Empresa",    align: "left"  },
+                        { col: "current" as WatchSortCol, label: "Actual",      align: "right" },
+                        { col: "target"  as WatchSortCol, label: "Target",      align: "right" },
+                        { col: "vstarget"as WatchSortCol, label: "vs Target",   align: "right" },
+                        { col: "drop"    as WatchSortCol, label: "Caída 52w",   align: "right" },
+                        { col: "grade"   as WatchSortCol, label: "Grado",       align: "left"  },
+                        { col: "buyscore"as WatchSortCol, label: "Buy Score",   align: "right" },
+                      ]).map(({ col, label, align }) => (
+                        <th key={col}
+                          onClick={() => handleWatchSort(col)}
+                          className={`pb-2 pr-4 text-${align} cursor-pointer select-none hover:text-gray-300 transition-colors ${watchSort === col ? "text-white" : ""}`}>
+                          {label} {sortIcon(watchSort === col, watchDir)}
+                        </th>
+                      ))}
                       <th className="pb-2 pr-4">Agregado</th>
                       <th className="pb-2"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {watchList.map(e => {
+                    {watchSorted.map(e => {
                       const live = liveData.get(e.symbol)
                       const vsTarget = (live && e.targetPrice)
                         ? ((e.targetPrice - live.currentPrice) / live.currentPrice) * 100
@@ -492,7 +565,8 @@ export default function PortafolioPage() {
               </div>
             )}
           </div>
-        )}
+          )
+        })()}
 
         {/* ── TAB: ALERTAS ─────────────────────────────────────────────────── */}
         {tab === "alerts" && (

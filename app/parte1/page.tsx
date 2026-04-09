@@ -86,6 +86,8 @@ const UNIVERSES: { key: Universe; label: string; symbols: string[]; small?: bool
   { key: "consumer-small",label: "Consumo Básico Small", symbols: CONSUMER_SMALL_SYMBOLS,     small: true },
 ]
 
+type SortCol1 = "final" | "quality" | "price" | "drop" | "grade"
+
 export default function Parte1() {
   const [stocks, setStocks]     = useState<Scored[]>([])
   const [loading, setLoading]   = useState(false)
@@ -97,7 +99,14 @@ export default function Parte1() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [minGrade, setMinGrade] = useState<string>("F")
   const [sectorFilter, setSectorFilter] = useState<string>("all")
+  const [sortBy1, setSortBy1]   = useState<SortCol1>("final")
+  const [sortDir1, setSortDir1] = useState<"asc" | "desc">("desc")
   const runningRef = { current: false }
+
+  function handleSort1(col: SortCol1) {
+    if (sortBy1 === col) setSortDir1(d => d === "desc" ? "asc" : "desc")
+    else { setSortBy1(col); setSortDir1("desc") }
+  }
 
   const universeSymbols = UNIVERSES.find(u => u.key === universe)?.symbols ?? DJIA_SYMBOLS
   const symbols = universe === "sp500" ? universeSymbols.slice(0, limit) : universeSymbols
@@ -142,7 +151,20 @@ export default function Parte1() {
     GRADE_ORDER.indexOf(s.score.grade) >= GRADE_ORDER.indexOf(minGrade)
   )
   const sectors = Array.from(new Set(gradeFiltered.map(s => s.sector).filter(Boolean))).sort()
-  const filtered = sectorFilter === "all" ? gradeFiltered : gradeFiltered.filter(s => s.sector === sectorFilter)
+  const filteredRaw = sectorFilter === "all" ? gradeFiltered : gradeFiltered.filter(s => s.sector === sectorFilter)
+
+  const filtered = [...filteredRaw].sort((a, b) => {
+    let va: number, vb: number
+    const GO = ["F","D","C","B","A","A+"]
+    switch (sortBy1) {
+      case "grade":   va = GO.indexOf(a.score.grade);   vb = GO.indexOf(b.score.grade);   break
+      case "quality": va = a.score.qualityScore;         vb = b.score.qualityScore;         break
+      case "price":   va = a.score.priceScore;           vb = b.score.priceScore;           break
+      case "drop":    va = -a.dropFrom52w;               vb = -b.dropFrom52w;               break
+      default:        va = a.score.finalScore;           vb = b.score.finalScore
+    }
+    return sortDir1 === "desc" ? vb - va : va - vb
+  })
 
   // Sector distribution: per sector, count grades
   const sectorDist = sectors.map(sec => {
@@ -320,11 +342,30 @@ export default function Parte1() {
         {/* Resultados */}
         {filtered.length > 0 && (
           <div className="space-y-3">
-            <p className="text-sm text-gray-500">
-              {filtered.length} empresa{filtered.length !== 1 ? "s" : ""}
-              {sectorFilter !== "all" ? ` en ${sectorFilter}` : ""}
-              {filtered.length !== stocks.length ? ` de ${stocks.length}` : ""} — ordenadas por score de calidad
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm text-gray-500 mr-2">
+                {filtered.length} empresa{filtered.length !== 1 ? "s" : ""}
+                {sectorFilter !== "all" ? ` en ${sectorFilter}` : ""}
+                {filtered.length !== stocks.length ? ` de ${stocks.length}` : ""}
+              </p>
+              <span className="text-xs text-gray-600">Ordenar:</span>
+              {([
+                { col: "final"   as SortCol1, label: "Score Final" },
+                { col: "quality" as SortCol1, label: "Calidad"     },
+                { col: "price"   as SortCol1, label: "Precio"      },
+                { col: "drop"    as SortCol1, label: "Caída 52w"   },
+                { col: "grade"   as SortCol1, label: "Grade"       },
+              ]).map(({ col, label }) => (
+                <button key={col} onClick={() => handleSort1(col)}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                    sortBy1 === col
+                      ? "border-blue-600 text-blue-300 bg-blue-900/30"
+                      : "border-gray-700 text-gray-500 hover:text-gray-300"
+                  }`}>
+                  {label} {sortBy1 === col ? (sortDir1 === "desc" ? "▼" : "▲") : ""}
+                </button>
+              ))}
+            </div>
 
             {filtered.map(s => {
               const open = expanded === s.symbol

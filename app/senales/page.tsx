@@ -12,6 +12,23 @@ import { ErrorBoundary } from "../ErrorBoundary"
 
 type Scored = StockData & { score: ScoreBreakdown; brain: BrainOutput }
 type Signal = ScoreBreakdown["signal"]
+type SortCol = "grade" | "quality" | "price" | "final" | "heat" | "drop" | "pfcf" | "graham" | "upside"
+
+const GRADE_ORDER = ["F", "D", "C", "B", "A", "A+"]
+
+function getSortValue(s: Scored, col: SortCol): number {
+  switch (col) {
+    case "grade":   return GRADE_ORDER.indexOf(s.score.grade)
+    case "quality": return s.score.qualityScore
+    case "price":   return s.score.priceScore
+    case "final":   return s.score.finalScore
+    case "heat":    return s.brain.sectorHeat
+    case "drop":    return -s.dropFrom52w          // más negativo = mayor caída = valor más alto al ordenar
+    case "pfcf":    return s.pFcf > 0 ? -s.pFcf : -999
+    case "graham":  return s.discountToGraham
+    case "upside":  return s.upsideToTarget
+  }
+}
 
 const SIGNAL_ORDER: Signal[] = ["Compra Fuerte", "Compra", "Mantener", "Venta", "Venta Fuerte"]
 
@@ -104,6 +121,32 @@ export default function SenalesPage() {
   const [universe, setUniverse] = useState<"dia" | "sp500" | "nasdaq" | "russell">("dia")
   const [filter, setFilter]     = useState<Signal | "Todas">("Todas")
   const [macroCtx, setMacroCtx] = useState<MacroContext | null>(null)
+  const [sortBy, setSortBy]     = useState<SortCol>("final")
+  const [sortDir, setSortDir]   = useState<"asc" | "desc">("desc")
+
+  function handleSort(col: SortCol) {
+    if (sortBy === col) setSortDir(d => d === "desc" ? "asc" : "desc")
+    else { setSortBy(col); setSortDir("desc") }
+  }
+
+  function sortItems(items: Scored[]): Scored[] {
+    return [...items].sort((a, b) => {
+      const cmp = getSortValue(a, sortBy) - getSortValue(b, sortBy)
+      return sortDir === "desc" ? -cmp : cmp
+    })
+  }
+
+  function SortTh({ col, label, align = "right" }: { col: SortCol; label: string; align?: string }) {
+    const active = sortBy === col
+    return (
+      <th
+        onClick={() => handleSort(col)}
+        className={`px-3 py-2.5 text-${align} cursor-pointer select-none hover:text-gray-300 transition-colors ${active ? "text-white" : "text-gray-500"} uppercase tracking-wide text-xs`}
+      >
+        {label} <span className="text-[10px]">{active ? (sortDir === "desc" ? "▼" : "▲") : "↕"}</span>
+      </th>
+    )
+  }
 
   async function run() {
     setLoading(true)
@@ -159,10 +202,7 @@ export default function SenalesPage() {
     bySignal[s.brain.finalSignal].push(s)
   }
 
-  // Ordenar dentro de cada grupo por finalScore descendente
-  for (const sig of SIGNAL_ORDER) {
-    bySignal[sig].sort((a, b) => b.score.finalScore - a.score.finalScore)
-  }
+  // El sort dinámico se aplica en render via sortItems()
 
   const visibleSignals = filter === "Todas"
     ? SIGNAL_ORDER
@@ -288,7 +328,7 @@ export default function SenalesPage() {
 
         {/* Tablas por señal */}
         {ran && visibleSignals.map(sig => {
-          const items = bySignal[sig]
+          const items = sortItems(bySignal[sig])
           if (items.length === 0) return null
           const s = SIGNAL_STYLE[sig]
 
@@ -307,19 +347,19 @@ export default function SenalesPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-gray-900/60 text-gray-500 text-xs uppercase tracking-wide">
-                      <th className="text-left px-4 py-2.5">Empresa</th>
-                      <th className="text-left px-3 py-2.5">Sector</th>
-                      <th className="text-right px-3 py-2.5">Grade</th>
-                      <th className="text-right px-3 py-2.5">Calidad</th>
-                      <th className="text-right px-3 py-2.5">Precio</th>
-                      <th className="text-right px-3 py-2.5">Final</th>
-                      <th className="text-right px-3 py-2.5">Ciclo</th>
-                      <th className="text-right px-3 py-2.5">Caída 52w</th>
-                      <th className="text-right px-3 py-2.5">P/FCF</th>
-                      <th className="text-right px-3 py-2.5">Graham</th>
-                      <th className="text-right px-3 py-2.5">Upside</th>
-                      <th className="px-4 py-2.5">Razón</th>
+                    <tr className="bg-gray-900/60">
+                      <th className="text-left px-4 py-2.5 text-xs text-gray-500 uppercase tracking-wide">Empresa</th>
+                      <th className="text-left px-3 py-2.5 text-xs text-gray-500 uppercase tracking-wide">Sector</th>
+                      <SortTh col="grade"   label="Grade" />
+                      <SortTh col="quality" label="Calidad" />
+                      <SortTh col="price"   label="Precio" />
+                      <SortTh col="final"   label="Final" />
+                      <SortTh col="heat"    label="Ciclo" />
+                      <SortTh col="drop"    label="Caída 52w" />
+                      <SortTh col="pfcf"    label="P/FCF" />
+                      <SortTh col="graham"  label="Graham" />
+                      <SortTh col="upside"  label="Upside" />
+                      <th className="px-4 py-2.5 text-xs text-gray-500 uppercase tracking-wide">Razón</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800/60">
