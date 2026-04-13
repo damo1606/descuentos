@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { computeAnalysis } from "@/lib/gex";
+import { computeAnalysis2 } from "@/lib/gex2";
+import { computeAnalysis3 } from "@/lib/gex3";
+import type { ExpData } from "@/lib/gex3";
 
-// ── Yahoo Finance helpers (shared with /api/analysis) ─────────────────────────
+// ── Yahoo Finance helpers ─────────────────────────────────────────────────────
 
 const HEADERS = {
   "User-Agent":
@@ -24,8 +27,10 @@ async function getCredentials(): Promise<{ crumb: string; cookie: string }> {
   return { crumb, cookie };
 }
 
-async function fetchOptions(ticker: string, cookie: string, crumb: string) {
-  const url = `https://query2.finance.yahoo.com/v7/finance/options/${ticker}?crumb=${crumb}`;
+async function fetchOptions(ticker: string, cookie: string, crumb: string, dateTs?: number) {
+  const params = new URLSearchParams({ crumb });
+  if (dateTs) params.set("date", String(dateTs));
+  const url = `https://query2.finance.yahoo.com/v7/finance/options/${ticker}?${params}`;
   const res = await fetch(url, { headers: { ...HEADERS, Cookie: cookie }, cache: "no-store" });
   if (!res.ok) throw new Error(`Yahoo returned ${res.status}`);
   const json = await res.json();
@@ -34,13 +39,28 @@ async function fetchOptions(ticker: string, cookie: string, crumb: string) {
   return result;
 }
 
+function extractRaw(opts: any) {
+  return {
+    calls: (opts?.calls ?? []).map((c: any) => ({
+      strike: c.strike ?? 0,
+      impliedVolatility: c.impliedVolatility ?? 0,
+      openInterest: c.openInterest ?? 0,
+    })),
+    puts: (opts?.puts ?? []).map((p: any) => ({
+      strike: p.strike ?? 0,
+      impliedVolatility: p.impliedVolatility ?? 0,
+      openInterest: p.openInterest ?? 0,
+    })),
+  };
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ConvictionRow {
-  // Descuentos fundamental
   symbol: string;
   company: string;
   sector: string;
+  // Descuentos
   buyScore: number;
   grade: string;
   currentPrice: number;
@@ -50,13 +70,23 @@ export interface ConvictionRow {
   upsideToTarget: number;
   pe: number;
   roe: number;
-  // SORE M1
-  institutionalPressure: number;
-  netGex: number;
-  support: number;
-  resistance: number;
-  gammaFlip: number;
-  putCallRatio: number;
+  // M1 — GEX / Vanna / Dealer Flow
+  m1Pressure: number;       // institutionalPressure -100 a +100
+  m1Support: number;
+  m1Resistance: number;
+  m1GammaFlip: number;
+  m1NetGex: number;
+  m1Pcr: number;
+  // M2 — Z-Score GEX + PCR
+  m2Pressure: number;       // max institutionalPressure de filteredStrikes
+  m2Support: number;
+  m2Resistance: number;
+  // M3 — Confluencia multi-expiración
+  m3Confluence: number;     // max confluenceScore
+  m3SupportConf: number;    // supportConfidence 0-100
+  m3ResistanceConf: number;
+  m3Support: number;
+  m3Resistance: number;
   // Combined
   convictionScore: number;
   verdict: "STRONG BUY" | "BUY" | "WATCH" | "NEUTRAL";
@@ -64,20 +94,29 @@ export interface ConvictionRow {
   noOptions?: boolean;
 }
 
-// ── Score helpers ─────────────────────────────────────────────────────────────
+// ── Scoring helpers ───────────────────────────────────────────────────────────
 
 function calcConviction(
   buyScore: number,
-  institutionalPressure: number,
+  m1Pressure: number,
+  m2Pressure: number,
+  m3Confluence: number,
+  m3SupportConf: number,
   support: number,
   resistance: number,
   spot: number
 ): number {
-  const normalizedPressure = Math.max(0, institutionalPressure); // 0-100 (only bullish side)
-  const confluenceBonus = support < spot && spot < resistance ? 100 : 0;
+  const p1 = Math.max(0, m1Pressure);          // M1 bullish pressure 0-100
+  const p2 = Math.max(0, m2Pressure) * 20;     // M2 z-score normalized
+  const p3 = Math.max(0, m3SupportConf);        // M3 confidence 0-100
+  const confluence = support > 0 && support < spot && spot < resistance ? 100 : 0;
   return Math.min(
     100,
-    buyScore * 0.5 + normalizedPressure * 0.3 + confluenceBonus * 0.2
+    buyScore * 0.40 +
+    p1 * 0.20 +
+    p2 * 0.15 +
+    p3 * 0.15 +
+    confluence * 0.10
   );
 }
 
@@ -88,57 +127,105 @@ function toVerdict(score: number): ConvictionRow["verdict"] {
   return "NEUTRAL";
 }
 
-function toSoreBias(pressure: number): ConvictionRow["soreBias"] {
-  if (pressure > 25) return "BULLISH";
-  if (pressure < -25) return "BEARISH";
+function toSoreBias(m1: number, m2: number, m3conf: number): ConvictionRow["soreBias"] {
+  const avg = (m1 + m2 * 20) / 2;
+  if (avg > 20 || m3conf > 60) return "BULLISH";
+  if (avg < -20) return "BEARISH";
   return "NEUTRAL";
+}
+
+// ── Per-ticker analysis ───────────────────────────────────────────────────────
+
+async function analyzeTickerWithM1M2M3(
+  symbol: string,
+  cookie: string,
+  crumb: string
+) {
+  // Fetch first expiration (used for M1 + M2)
+  const initial = await fetchOptions(symbol, cookie, crumb);
+  const spot: number = initial.quote?.regularMarketPrice;
+  if (!spot) throw new Error(`No price for ${symbol}`);
+
+  const expTimestamps: number[] = initial.expirationDates ?? [];
+  const expirations = expTimestamps.map(
+    (ts) => new Date(ts * 1000).toISOString().split("T")[0]
+  );
+
+  const opts0 = initial.options?.[0];
+  if (!opts0) throw new Error("No options chain");
+  const { calls: calls0, puts: puts0 } = extractRaw(opts0);
+
+  // M1
+  const m1 = computeAnalysis(symbol, spot, expirations[0], expirations, calls0, puts0);
+
+  // M2 (same data)
+  const m2 = computeAnalysis2(symbol, spot, expirations[0], expirations, calls0, puts0);
+
+  // M3 — fetch up to 2 more expirations for multi-exp confluence
+  const expDataList: ExpData[] = [{ expiration: expirations[0], calls: calls0, puts: puts0 }];
+
+  const extraExps = expTimestamps.slice(1, 3); // up to 2 more
+  const extraResults = await Promise.allSettled(
+    extraExps.map((ts) => fetchOptions(symbol, cookie, crumb, ts))
+  );
+  for (let i = 0; i < extraResults.length; i++) {
+    const r = extraResults[i];
+    if (r.status === "fulfilled") {
+      const opts = r.value.options?.[0];
+      if (opts) {
+        const { calls, puts } = extractRaw(opts);
+        expDataList.push({ expiration: expirations[i + 1], calls, puts });
+      }
+    }
+  }
+
+  const m3 = computeAnalysis3(symbol, spot, expDataList);
+
+  return { spot, m1, m2, m3 };
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const universe = searchParams.get("universe") ?? "sp500";
-  const limit = Math.min(parseInt(searchParams.get("limit") ?? "20"), 30);
+  const universe    = searchParams.get("universe") ?? "sp500";
+  const limit       = Math.min(parseInt(searchParams.get("limit") ?? "20"), 30);
   const minBuyScore = parseInt(searchParams.get("minBuyScore") ?? "50");
 
-  // 1. Fetch fundamental screener data (internal call)
+  // 1. Fetch fundamental screener
   let fundamentals: any[] = [];
   try {
     const base = new URL(request.url);
-    const screenerUrl = `${base.origin}/api/screener?universe=${universe}&limit=${limit}`;
-    const screenerRes = await fetch(screenerUrl, { cache: "no-store" });
-    if (!screenerRes.ok) throw new Error("Screener fetch failed");
-    const screenerJson = await screenerRes.json();
-    fundamentals = screenerJson.stocks ?? [];
+    const res = await fetch(
+      `${base.origin}/api/screener?universe=${universe}&limit=${limit}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) throw new Error("Screener fetch failed");
+    fundamentals = (await res.json()).stocks ?? [];
   } catch (e: any) {
     return NextResponse.json({ error: `Screener error: ${e.message}` }, { status: 500 });
   }
 
-  // 2. Score and filter by minBuyScore
+  // 2. Score + filter
   const { scoreStock } = await import("@/lib/scoring");
-
   const scored = fundamentals
     .map((s: any) => ({ stock: s, score: scoreStock(s) }))
     .filter(({ score }) => score.buyScore >= minBuyScore)
     .sort((a, b) => b.score.buyScore - a.score.buyScore)
     .slice(0, limit);
 
-  if (scored.length === 0) {
-    return NextResponse.json({ rows: [], total: 0 });
-  }
+  if (scored.length === 0) return NextResponse.json({ rows: [], total: 0 });
 
-  // 3. Get Yahoo credentials once (shared across all tickers)
-  let crumb = "";
-  let cookie = "";
+  // 3. Yahoo credentials (shared)
+  let crumb = "", cookie = "";
   try {
     ({ crumb, cookie } = await getCredentials());
   } catch (e: any) {
-    return NextResponse.json({ error: `Yahoo auth error: ${e.message}` }, { status: 500 });
+    return NextResponse.json({ error: `Yahoo auth: ${e.message}` }, { status: 500 });
   }
 
-  // 4. Fetch options + compute M1 for each ticker in parallel (batches of 10)
-  const BATCH = 10;
+  // 4. M1 + M2 + M3 per ticker in parallel batches
+  const BATCH = 8; // smaller batch since M3 fetches 2 extra expirations
   const rows: ConvictionRow[] = [];
 
   for (let i = 0; i < scored.length; i += BATCH) {
@@ -146,39 +233,28 @@ export async function GET(request: NextRequest) {
     const results = await Promise.allSettled(
       batch.map(async ({ stock, score }) => {
         try {
-          const optData = await fetchOptions(stock.symbol, cookie, crumb);
-          const spot: number = optData.quote?.regularMarketPrice ?? stock.currentPrice;
-          const expirations: string[] = ((optData.expirationDates as number[]) ?? []).map(
-            (ts) => new Date(ts * 1000).toISOString().split("T")[0]
-          );
-          const opts = optData.options?.[0];
-          if (!opts) throw new Error("No options chain");
-
-          const rawCalls = (opts.calls ?? []).map((c: any) => ({
-            strike: c.strike ?? 0,
-            impliedVolatility: c.impliedVolatility ?? 0,
-            openInterest: c.openInterest ?? 0,
-          }));
-          const rawPuts = (opts.puts ?? []).map((p: any) => ({
-            strike: p.strike ?? 0,
-            impliedVolatility: p.impliedVolatility ?? 0,
-            openInterest: p.openInterest ?? 0,
-          }));
-
-          const gex = computeAnalysis(
-            stock.symbol,
-            spot,
-            expirations[0] ?? "",
-            expirations,
-            rawCalls,
-            rawPuts
+          const { spot, m1, m2, m3 } = await analyzeTickerWithM1M2M3(
+            stock.symbol, cookie, crumb
           );
 
-          const convictionScore = calcConviction(
+          // M2 max institutional pressure from filteredStrikes
+          const m2PressureMax = m2.filteredStrikes.length > 0
+            ? Math.max(...m2.filteredStrikes.map((s: any) => s.institutionalPressure))
+            : 0;
+
+          // M3 max confluence score
+          const m3ConfluenceMax = m3.filteredStrikes.length > 0
+            ? Math.max(...m3.filteredStrikes.map((s: any) => Math.abs(s.confluenceScore)))
+            : 0;
+
+          const conviction = calcConviction(
             score.buyScore,
-            gex.institutionalPressure,
-            gex.levels.support,
-            gex.levels.resistance,
+            m1.institutionalPressure,
+            m2PressureMax,
+            m3ConfluenceMax,
+            m3.supportConfidence ?? 0,
+            m1.levels.support,
+            m1.levels.resistance,
             spot
           );
 
@@ -195,19 +271,26 @@ export async function GET(request: NextRequest) {
             upsideToTarget: stock.upsideToTarget ?? 0,
             pe: stock.pe ?? 0,
             roe: stock.roe ?? 0,
-            institutionalPressure: gex.institutionalPressure,
-            netGex: gex.netGex,
-            support: gex.levels.support,
-            resistance: gex.levels.resistance,
-            gammaFlip: gex.levels.gammaFlip,
-            putCallRatio: gex.putCallRatio,
-            convictionScore: parseFloat(convictionScore.toFixed(1)),
-            verdict: toVerdict(convictionScore),
-            soreBias: toSoreBias(gex.institutionalPressure),
+            m1Pressure: m1.institutionalPressure,
+            m1Support: m1.levels.support,
+            m1Resistance: m1.levels.resistance,
+            m1GammaFlip: m1.levels.gammaFlip,
+            m1NetGex: m1.netGex,
+            m1Pcr: m1.putCallRatio,
+            m2Pressure: parseFloat(m2PressureMax.toFixed(2)),
+            m2Support: m2.support,
+            m2Resistance: m2.resistance,
+            m3Confluence: parseFloat(m3ConfluenceMax.toFixed(2)),
+            m3SupportConf: m3.supportConfidence ?? 0,
+            m3ResistanceConf: m3.resistanceConfidence ?? 0,
+            m3Support: m3.support,
+            m3Resistance: m3.resistance,
+            convictionScore: parseFloat(conviction.toFixed(1)),
+            verdict: toVerdict(conviction),
+            soreBias: toSoreBias(m1.institutionalPressure, m2PressureMax, m3.supportConfidence ?? 0),
           } satisfies ConvictionRow;
         } catch {
-          // Ticker has no liquid options — include with SORE fields zeroed
-          const convictionScore = calcConviction(score.buyScore, 0, 0, 0, 0);
+          const conviction = calcConviction(score.buyScore, 0, 0, 0, 0, 0, 0, 0);
           return {
             symbol: stock.symbol,
             company: stock.company,
@@ -221,27 +304,24 @@ export async function GET(request: NextRequest) {
             upsideToTarget: stock.upsideToTarget ?? 0,
             pe: stock.pe ?? 0,
             roe: stock.roe ?? 0,
-            institutionalPressure: 0,
-            netGex: 0,
-            support: 0,
-            resistance: 0,
-            gammaFlip: 0,
-            putCallRatio: 0,
-            convictionScore: parseFloat(convictionScore.toFixed(1)),
-            verdict: toVerdict(convictionScore),
+            m1Pressure: 0, m1Support: 0, m1Resistance: 0,
+            m1GammaFlip: 0, m1NetGex: 0, m1Pcr: 0,
+            m2Pressure: 0, m2Support: 0, m2Resistance: 0,
+            m3Confluence: 0, m3SupportConf: 0, m3ResistanceConf: 0,
+            m3Support: 0, m3Resistance: 0,
+            convictionScore: parseFloat(conviction.toFixed(1)),
+            verdict: toVerdict(conviction),
             soreBias: "NEUTRAL",
             noOptions: true,
           } satisfies ConvictionRow;
         }
       })
     );
-
     for (const r of results) {
       if (r.status === "fulfilled") rows.push(r.value);
     }
   }
 
   rows.sort((a, b) => b.convictionScore - a.convictionScore);
-
   return NextResponse.json({ rows, total: rows.length });
 }

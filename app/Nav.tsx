@@ -15,7 +15,7 @@ const PAGES: NavPage[] = [
   { href: "/prospectiva", label: "Prospectiva",  exact: true },
   { href: "/portafolio",  label: "Portafolio",   exact: true },
   { href: "/senales",     label: "Señales",      exact: true },
-  { href: "/scanner-pro",    label: "Scanner Pro",  sore: true },
+  { href: "/scanner-pro",    label: "Scanner Pro",  exact: true },
   { href: "/gex",            label: "GEX",          sore: true },
   { href: "/scanner",        label: "Scanner",      sore: true },
   { href: "/rotacion",       label: "Rotación",     sore: true },

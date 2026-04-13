@@ -4,10 +4,8 @@ import { SESSION_COOKIE, verifyToken } from "@/lib/auth";
 // Rutas de SORE que requieren autenticación
 const SORE_PROTECTED = [
   "/gex",
-  "/scanner-pro",
   "/scanner",
   "/rotacion",
-  "/api/scanner-pro",
   "/api/analysis",
   "/api/chart",
   "/api/expirations",
