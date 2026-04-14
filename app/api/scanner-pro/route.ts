@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { computeAnalysis } from "@/lib/gex";
 import { computeAnalysis2 } from "@/lib/gex2";
 import { computeAnalysis3 } from "@/lib/gex3";
+import { computeAnalysis5, compute25dSkew, type ExpData5 } from "@/lib/gex5";
+import { computeSpyMetrics, computeRegime } from "@/lib/gex6";
+import { computeAnalysis7 } from "@/lib/gex7";
 import type { ExpData } from "@/lib/gex3";
+import type { Analysis6Result } from "@/lib/gex6";
 
 // ── Yahoo Finance helpers ─────────────────────────────────────────────────────
 
@@ -39,6 +43,23 @@ async function fetchOptions(ticker: string, cookie: string, crumb: string, dateT
   return result;
 }
 
+async function fetchHistory(
+  symbol: string,
+  cookie: string,
+  crumb: string,
+  range = "5d"
+): Promise<{ current: number; history: number[] }> {
+  const encoded = encodeURIComponent(symbol);
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=${range}&crumb=${crumb}`;
+  const res = await fetch(url, { headers: { ...HEADERS, Cookie: cookie }, cache: "no-store" });
+  if (!res.ok) throw new Error(`Could not fetch ${symbol} (${res.status})`);
+  const json = await res.json();
+  const result = json?.chart?.result?.[0];
+  const closes: (number | null)[] = result?.indicators?.quote?.[0]?.close ?? [];
+  const valid = closes.filter((v): v is number => v != null);
+  return { current: valid[valid.length - 1] ?? 0, history: valid };
+}
+
 function extractRaw(opts: any) {
   return {
     calls: (opts?.calls ?? []).map((c: any) => ({
@@ -52,6 +73,50 @@ function extractRaw(opts: any) {
       openInterest: p.openInterest ?? 0,
     })),
   };
+}
+
+// ── Market Regime (M6) — fetched once, shared across all tickers ──────────────
+
+async function fetchMarketRegime(cookie: string, crumb: string): Promise<Analysis6Result> {
+  const [vixData, vix3mData, spyResult, hygData, spyHistory] = await Promise.all([
+    fetchHistory("^VIX", cookie, crumb, "5d"),
+    fetchHistory("^VIX3M", cookie, crumb, "5d").catch(() => ({ current: 0, history: [] as number[] })),
+    fetchOptions("SPY", cookie, crumb),
+    fetchHistory("HYG", cookie, crumb, "5d").catch(() => ({ current: 0, history: [] as number[] })),
+    fetchHistory("SPY", cookie, crumb, "3mo").catch(() => ({ current: 0, history: [] as number[] })),
+  ]);
+
+  const vix        = vixData.current;
+  const vix3m      = vix3mData.current > 0 ? vix3mData.current : vix * 1.05;
+  const vixHistory = vixData.history;
+
+  const hygHistory  = hygData.history;
+  const hygOldest   = hygHistory[0] ?? 0;
+  const hygChange5d = hygOldest > 0 ? ((hygData.current - hygOldest) / hygOldest) * 100 : 0;
+
+  const spyHistArr  = spyHistory.history;
+  const spyCurrent  = spyHistory.current;
+  const last50      = spyHistArr.slice(-50);
+  const sma50       = last50.length > 0 ? last50.reduce((a, b) => a + b, 0) / last50.length : spyCurrent;
+  const spyVsSma50  = sma50 > 0 ? ((spyCurrent - sma50) / sma50) * 100 : 0;
+
+  const spySpot: number = spyResult.quote?.regularMarketPrice ?? 0;
+  const spyOptData = spyResult.options?.[0];
+  if (!spyOptData) throw new Error("No SPY options chain");
+
+  const today  = new Date();
+  const expTs: number = spyResult.expirationDates?.[0] ?? 0;
+  const T = Math.max((new Date(expTs * 1000).getTime() - today.getTime()) / (365 * 24 * 60 * 60 * 1000), 0.001);
+
+  const spyCalls = (spyOptData.calls ?? []).map((c: any) => ({
+    strike: c.strike ?? 0, impliedVolatility: c.impliedVolatility ?? 0, openInterest: c.openInterest ?? 0,
+  }));
+  const spyPuts = (spyOptData.puts ?? []).map((p: any) => ({
+    strike: p.strike ?? 0, impliedVolatility: p.impliedVolatility ?? 0, openInterest: p.openInterest ?? 0,
+  }));
+
+  const { gexTotal: spyGexTotal, pcr: spyPcr } = computeSpyMetrics(spyCalls, spyPuts, spySpot, T);
+  return computeRegime(vix, vix3m, vixHistory, spyGexTotal, spyPcr, spySpot, hygChange5d, spyVsSma50);
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -71,22 +136,43 @@ export interface ConvictionRow {
   pe: number;
   roe: number;
   // M1 — GEX / Vanna / Dealer Flow
-  m1Pressure: number;       // institutionalPressure -100 a +100
+  m1Pressure: number;
   m1Support: number;
   m1Resistance: number;
   m1GammaFlip: number;
   m1NetGex: number;
   m1Pcr: number;
   // M2 — Z-Score GEX + PCR
-  m2Pressure: number;       // max institutionalPressure de filteredStrikes
+  m2Pressure: number;
   m2Support: number;
   m2Resistance: number;
   // M3 — Confluencia multi-expiración
-  m3Confluence: number;     // max confluenceScore
-  m3SupportConf: number;    // supportConfidence 0-100
+  m3Confluence: number;
+  m3SupportConf: number;
   m3ResistanceConf: number;
   m3Support: number;
   m3Resistance: number;
+  // M5 — Señal consolidada
+  m5Score: number;          // -100 a +100
+  m5Verdict: string;        // ALCISTA | BAJISTA | NEUTRAL
+  m5Support: number;
+  m5Resistance: number;
+  m5MaxPain: number;
+  m5Probability: number;
+  // M6 — Régimen de mercado (global, misma para todos los tickers)
+  m6Regime: string;
+  m6FearScore: number;
+  m6FearLabel: string;
+  m6Vix: number;
+  m6VixVelocity: string;
+  m6SignalSuspended: boolean;
+  m6Multiplier: number;
+  // M7 — Veredicto final
+  m7Score: number;          // -100 a +100
+  m7Verdict: string;        // ALCISTA | BAJISTA | NEUTRAL
+  m7Confidence: number;
+  m7PrimaryLongEntry: number;
+  m7PrimaryShortEntry: number;
   // Combined
   convictionScore: number;
   verdict: "STRONG BUY" | "BUY" | "WATCH" | "NEUTRAL";
@@ -96,28 +182,11 @@ export interface ConvictionRow {
 
 // ── Scoring helpers ───────────────────────────────────────────────────────────
 
-function calcConviction(
-  buyScore: number,
-  m1Pressure: number,
-  m2Pressure: number,
-  m3Confluence: number,
-  m3SupportConf: number,
-  support: number,
-  resistance: number,
-  spot: number
-): number {
-  const p1 = Math.max(0, m1Pressure);          // M1 bullish pressure 0-100
-  const p2 = Math.max(0, m2Pressure) * 20;     // M2 z-score normalized
-  const p3 = Math.max(0, m3SupportConf);        // M3 confidence 0-100
-  const confluence = support > 0 && support < spot && spot < resistance ? 100 : 0;
-  return Math.min(
-    100,
-    buyScore * 0.40 +
-    p1 * 0.20 +
-    p2 * 0.15 +
-    p3 * 0.15 +
-    confluence * 0.10
-  );
+function calcConviction(buyScore: number, m7Score: number, hasOptions: boolean): number {
+  if (!hasOptions) return Math.min(100, buyScore * 0.40);
+  // M7 ya agrega M1-M6 ponderados. Normalize -100..+100 → 0..100
+  const m7Norm = (Math.max(-100, Math.min(100, m7Score)) + 100) / 2;
+  return Math.min(100, buyScore * 0.40 + m7Norm * 0.60);
 }
 
 function toVerdict(score: number): ConvictionRow["verdict"] {
@@ -127,21 +196,21 @@ function toVerdict(score: number): ConvictionRow["verdict"] {
   return "NEUTRAL";
 }
 
-function toSoreBias(m1: number, m2: number, m3conf: number): ConvictionRow["soreBias"] {
-  const avg = (m1 + m2 * 20) / 2;
-  if (avg > 20 || m3conf > 60) return "BULLISH";
-  if (avg < -20) return "BEARISH";
+function toSoreBias(m7Score: number, m7Verdict: string, suspended: boolean): ConvictionRow["soreBias"] {
+  if (suspended) return "NEUTRAL";
+  if (m7Verdict === "ALCISTA" || m7Score > 20) return "BULLISH";
+  if (m7Verdict === "BAJISTA" || m7Score < -20) return "BEARISH";
   return "NEUTRAL";
 }
 
 // ── Per-ticker analysis ───────────────────────────────────────────────────────
 
-async function analyzeTickerWithM1M2M3(
+async function analyzeTickerFull(
   symbol: string,
   cookie: string,
-  crumb: string
+  crumb: string,
+  m6: Analysis6Result,
 ) {
-  // Fetch first expiration (used for M1 + M2)
   const initial = await fetchOptions(symbol, cookie, crumb);
   const spot: number = initial.quote?.regularMarketPrice;
   if (!spot) throw new Error(`No price for ${symbol}`);
@@ -155,16 +224,21 @@ async function analyzeTickerWithM1M2M3(
   if (!opts0) throw new Error("No options chain");
   const { calls: calls0, puts: puts0 } = extractRaw(opts0);
 
+  // T para la primera expiración (usado en compute25dSkew)
+  const today = new Date();
+  const T0 = Math.max(
+    (new Date(expTimestamps[0] * 1000).getTime() - today.getTime()) / (365 * 24 * 60 * 60 * 1000),
+    0.001
+  );
+
   // M1
   const m1 = computeAnalysis(symbol, spot, expirations[0], expirations, calls0, puts0);
-
-  // M2 (same data)
+  // M2
   const m2 = computeAnalysis2(symbol, spot, expirations[0], expirations, calls0, puts0);
 
-  // M3 — fetch up to 2 more expirations for multi-exp confluence
+  // Fetch extra expirations para M3 + M5
   const expDataList: ExpData[] = [{ expiration: expirations[0], calls: calls0, puts: puts0 }];
-
-  const extraExps = expTimestamps.slice(1, 3); // up to 2 more
+  const extraExps = expTimestamps.slice(1, 3);
   const extraResults = await Promise.allSettled(
     extraExps.map((ts) => fetchOptions(symbol, cookie, crumb, ts))
   );
@@ -179,9 +253,28 @@ async function analyzeTickerWithM1M2M3(
     }
   }
 
+  // M3
   const m3 = computeAnalysis3(symbol, spot, expDataList);
 
-  return { spot, m1, m2, m3 };
+  // M5
+  const avgSkew25d = compute25dSkew(calls0, puts0, spot, T0);
+  const m5 = computeAnalysis5(
+    symbol, spot,
+    expDataList as unknown as ExpData5[],
+    m1.levels.gammaFlip,
+    m1.institutionalPressure,
+    m1.putCallRatio,
+    avgSkew25d,
+    m2.support,
+    m2.resistance,
+    m3.support,
+    m3.resistance,
+  );
+
+  // M7 — veredicto final agregando M1-M6
+  const m7 = computeAnalysis7(symbol, spot, m1, m2, m3, m5, m6);
+
+  return { spot, m1, m2, m3, m5, m6, m7 };
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -224,8 +317,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: `Yahoo auth: ${e.message}` }, { status: 500 });
   }
 
-  // 4. M1 + M2 + M3 per ticker in parallel batches
-  const BATCH = 8; // smaller batch since M3 fetches 2 extra expirations
+  // 4. M6 — régimen de mercado (global, fetch once)
+  let m6: Analysis6Result;
+  try {
+    m6 = await fetchMarketRegime(cookie, crumb);
+  } catch (e: any) {
+    return NextResponse.json({ error: `Régimen M6: ${e.message}` }, { status: 500 });
+  }
+
+  // 5. M1 + M2 + M3 + M5 + M7 per ticker in parallel batches
+  const BATCH = 6;
   const rows: ConvictionRow[] = [];
 
   for (let i = 0; i < scored.length; i += BATCH) {
@@ -233,30 +334,15 @@ export async function GET(request: NextRequest) {
     const results = await Promise.allSettled(
       batch.map(async ({ stock, score }) => {
         try {
-          const { spot, m1, m2, m3 } = await analyzeTickerWithM1M2M3(
-            stock.symbol, cookie, crumb
+          const { spot, m1, m2, m3, m5, m7 } = await analyzeTickerFull(
+            stock.symbol, cookie, crumb, m6
           );
 
-          // M2 max institutional pressure from filteredStrikes
           const m2PressureMax = m2.filteredStrikes.length > 0
             ? Math.max(...m2.filteredStrikes.map((s: any) => s.institutionalPressure))
             : 0;
 
-          // M3 max confluence score
-          const m3ConfluenceMax = m3.filteredStrikes.length > 0
-            ? Math.max(...m3.filteredStrikes.map((s: any) => Math.abs(s.confluenceScore)))
-            : 0;
-
-          const conviction = calcConviction(
-            score.buyScore,
-            m1.institutionalPressure,
-            m2PressureMax,
-            m3ConfluenceMax,
-            m3.supportConfidence ?? 0,
-            m1.levels.support,
-            m1.levels.resistance,
-            spot
-          );
+          const conviction = calcConviction(score.buyScore, m7.finalScore, true);
 
           return {
             symbol: stock.symbol,
@@ -280,17 +366,37 @@ export async function GET(request: NextRequest) {
             m2Pressure: parseFloat(m2PressureMax.toFixed(2)),
             m2Support: m2.support,
             m2Resistance: m2.resistance,
-            m3Confluence: parseFloat(m3ConfluenceMax.toFixed(2)),
+            m3Confluence: m3.filteredStrikes.length > 0
+              ? parseFloat(Math.max(...m3.filteredStrikes.map((s: any) => Math.abs(s.confluenceScore))).toFixed(2))
+              : 0,
             m3SupportConf: m3.supportConfidence ?? 0,
             m3ResistanceConf: m3.resistanceConfidence ?? 0,
             m3Support: m3.support,
             m3Resistance: m3.resistance,
+            m5Score: parseFloat(m5.score.toFixed(1)),
+            m5Verdict: m5.verdict,
+            m5Support: m5.support?.strike ?? 0,
+            m5Resistance: m5.resistance?.strike ?? 0,
+            m5MaxPain: m5.maxPain,
+            m5Probability: m5.probability,
+            m6Regime: m6.regime,
+            m6FearScore: m6.fearScore,
+            m6FearLabel: m6.fearLabel,
+            m6Vix: m6.vix,
+            m6VixVelocity: m6.vixVelocity,
+            m6SignalSuspended: m6.signalSuspended,
+            m6Multiplier: m6.m5Multiplier,
+            m7Score: parseFloat(m7.finalScore.toFixed(1)),
+            m7Verdict: m7.finalVerdict,
+            m7Confidence: m7.confidence,
+            m7PrimaryLongEntry: m7.primaryLong?.entryPrice ?? 0,
+            m7PrimaryShortEntry: m7.primaryShort?.entryPrice ?? 0,
             convictionScore: parseFloat(conviction.toFixed(1)),
             verdict: toVerdict(conviction),
-            soreBias: toSoreBias(m1.institutionalPressure, m2PressureMax, m3.supportConfidence ?? 0),
+            soreBias: toSoreBias(m7.finalScore, m7.finalVerdict, m6.signalSuspended),
           } satisfies ConvictionRow;
         } catch {
-          const conviction = calcConviction(score.buyScore, 0, 0, 0, 0, 0, 0, 0);
+          const conviction = calcConviction(score.buyScore, 0, false);
           return {
             symbol: stock.symbol,
             company: stock.company,
@@ -309,6 +415,17 @@ export async function GET(request: NextRequest) {
             m2Pressure: 0, m2Support: 0, m2Resistance: 0,
             m3Confluence: 0, m3SupportConf: 0, m3ResistanceConf: 0,
             m3Support: 0, m3Resistance: 0,
+            m5Score: 0, m5Verdict: "NEUTRAL", m5Support: 0, m5Resistance: 0,
+            m5MaxPain: 0, m5Probability: 0,
+            m6Regime: m6.regime,
+            m6FearScore: m6.fearScore,
+            m6FearLabel: m6.fearLabel,
+            m6Vix: m6.vix,
+            m6VixVelocity: m6.vixVelocity,
+            m6SignalSuspended: m6.signalSuspended,
+            m6Multiplier: m6.m5Multiplier,
+            m7Score: 0, m7Verdict: "NEUTRAL", m7Confidence: 0,
+            m7PrimaryLongEntry: 0, m7PrimaryShortEntry: 0,
             convictionScore: parseFloat(conviction.toFixed(1)),
             verdict: toVerdict(conviction),
             soreBias: "NEUTRAL",
@@ -323,5 +440,5 @@ export async function GET(request: NextRequest) {
   }
 
   rows.sort((a, b) => b.convictionScore - a.convictionScore);
-  return NextResponse.json({ rows, total: rows.length });
+  return NextResponse.json({ rows, total: rows.length, m6Regime: m6.regime, m6Vix: m6.vix });
 }
