@@ -1,10 +1,9 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "./ThemeProvider"
-import WallModal from "@/components/WallModal"
 
 type NavPage = { href: string; label: string; exact?: true }
 
@@ -19,7 +18,14 @@ const PAGES: NavPage[] = [
   { href: "/scanner-pro", label: "Scanner Pro",  exact: true },
 ]
 
-const SORE_PREFIXES = ["/gex", "/scanner", "/rotacion"]
+const SORE_PAGES: NavPage[] = [
+  { href: "/gex",            label: "GEX" },
+  { href: "/scanner",        label: "Scanner" },
+  { href: "/rotacion",       label: "Rotación" },
+  { href: "/gex/portafolio", label: "GEX Portfolio" },
+]
+
+const SORE_PREFIXES = SORE_PAGES.map(p => p.href)
 
 function isSorePath(path: string) {
   return SORE_PREFIXES.some(p => path === p || path.startsWith(p + "/"))
@@ -35,11 +41,71 @@ function NavItem({ href, label, active }: { href: string; label: string; active:
   )
 }
 
+function WallDropdown({ inSore, pathname }: { inSore: boolean; pathname: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handle)
+    return () => document.removeEventListener("mousedown", handle)
+  }, [])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+          inSore
+            ? "bg-emerald-800 text-emerald-200"
+            : "text-emerald-700 hover:text-emerald-400 hover:bg-gray-800/60"
+        }`}
+      >
+        <span className="tracking-[0.15em] font-bold">WALL</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="12" height="12"
+          viewBox="0 0 24 24"
+          fill="none" stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round" strokeLinejoin="round"
+          className={`transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-44 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 py-1">
+          {SORE_PAGES.map(p => {
+            const active = pathname === p.href || pathname.startsWith(p.href + "/")
+            return (
+              <Link
+                key={p.href}
+                href={p.href}
+                onClick={() => setOpen(false)}
+                className={`block px-4 py-2 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-emerald-800/60 text-emerald-200"
+                    : "text-emerald-700 hover:text-emerald-400 hover:bg-gray-800/60"
+                }`}
+              >
+                {p.label}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Nav() {
   const path = usePathname()
   const { theme, toggle } = useTheme()
   const inSore = isSorePath(path)
-  const [wallOpen, setWallOpen] = useState(false)
 
   const logout = useCallback(async () => {
     sessionStorage.removeItem("sore_active")
@@ -73,17 +139,7 @@ export function Nav() {
         })}
 
         <span className="text-gray-700 text-xs mx-1">|</span>
-        <button
-          onClick={() => setWallOpen(true)}
-          className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-            inSore
-              ? "bg-emerald-800 text-emerald-200"
-              : "text-emerald-700 hover:text-emerald-400 hover:bg-gray-800/60"
-          }`}
-        >
-          <span className="tracking-[0.15em] font-bold">WALL</span>
-        </button>
-        <WallModal open={wallOpen} onClose={() => setWallOpen(false)} />
+        <WallDropdown inSore={inSore} pathname={path} />
 
         <button
           onClick={toggle}

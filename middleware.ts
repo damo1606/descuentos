@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, verifyToken } from "@/lib/auth";
 
-// Rutas de SORE que requieren autenticación (solo páginas, no APIs — WALL modal las usa sin sesión)
+// Rutas de SORE que requieren autenticación
 const SORE_PROTECTED = [
   "/gex",
   "/scanner",
   "/rotacion",
+  "/api/analysis",
+  "/api/chart",
+  "/api/expirations",
+  "/api/heatmap2d",
+  "/api/rotation",
+  "/api/scanner",
+  "/api/search",
 ];
 
 function isSoreProtected(pathname: string): boolean {
