@@ -95,15 +95,6 @@ export default function WallModal({ open, onClose }: WallModalProps) {
   const searchRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // Auth check on open
-  useEffect(() => {
-    if (open && typeof window !== "undefined") {
-      if (!sessionStorage.getItem("sore_active")) {
-        window.location.href = "/login"
-      }
-    }
-  }, [open])
-
   // Escape key closes modal
   useEffect(() => {
     if (!open) return
